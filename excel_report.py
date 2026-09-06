@@ -25,7 +25,8 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.chart import Reference, ScatterChart, Series
 from openpyxl.chart.marker import Marker
-from openpyxl.styles import Font, PatternFill, Protection
+from openpyxl.formatting.rule import CellIsRule
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.table import Table, TableStyleInfo
@@ -140,6 +141,47 @@ def _autosize(ws, widths: dict[str, int]) -> None:
         ws.column_dimensions[col].width = width
 
 
+def _set_print_layout(ws) -> None:
+    """Fit the sheet to one page wide (tall pages are fine) so it prints
+    cleanly instead of being cut off mid-column."""
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_options.horizontalCentered = True
+    ws.page_margins.left = 0.3
+    ws.page_margins.right = 0.3
+    ws.page_margins.top = 0.4
+    ws.page_margins.bottom = 0.4
+
+
+def _thin_border(theme: Theme) -> Border:
+    side = Side(style="thin", color=theme.colors["grid"])
+    return Border(left=side, right=side, top=side, bottom=side)
+
+
+def _section_header(ws, row: int, text: str, n_cols: int, theme: Theme) -> None:
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n_cols)
+    cell = ws.cell(row=row, column=1, value=text)
+    cell.font = theme.font(size_key="size_header", bold=True, color=theme.colors["primary"])
+    cell.fill = PatternFill("solid", fgColor=theme.colors["kpi_fill"])
+    cell.alignment = Alignment(vertical="center", indent=1)
+    ws.row_dimensions[row].height = 20
+
+
+def _delta_conditional_format(ws, cell_range: str, theme: Theme) -> None:
+    green = PatternFill("solid", fgColor="C6EFCE")
+    green_font = Font(color="006100")
+    red = PatternFill("solid", fgColor="FFC7CE")
+    red_font = Font(color="9C0006")
+    ws.conditional_formatting.add(
+        cell_range, CellIsRule(operator="greaterThan", formula=["0"], fill=green, font=green_font)
+    )
+    ws.conditional_formatting.add(
+        cell_range, CellIsRule(operator="lessThan", formula=["0"], fill=red, font=red_font)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Config sheet
 # ---------------------------------------------------------------------------
@@ -167,14 +209,6 @@ def _write_config_sheet(ws, theme: Theme) -> None:
     _style_header_row(ws, cat_header_row, 1, theme)
     for i, category in enumerate(CATEGORIES, start=cat_header_row + 1):
         ws.cell(row=i, column=1, value=category.value)
-
-    theme_header_row = cat_header_row + len(CATEGORIES) + 2
-    ws.cell(row=theme_header_row, column=1, value="Theme colors (reference — edit theme.json to change)")
-    _style_header_row(ws, theme_header_row, 2, theme)
-    for i, (name, hexval) in enumerate(theme.colors.items(), start=theme_header_row + 1):
-        ws.cell(row=i, column=1, value=name)
-        cell = ws.cell(row=i, column=2, value=f"#{hexval}")
-        cell.fill = PatternFill("solid", fgColor=hexval)
 
     _autosize(ws, {"A": 32, "B": 22, "C": 22})
     _protect_sheet(ws)
@@ -236,6 +270,7 @@ INPUT_CURRENT_AUM_ROW = 5
 INPUT_ADDITIONAL_AUM_ROW = 6
 INPUT_PROMISED_AUM_ROW = 7
 INPUT_PROMISED_BRACKET_ROW = 8
+INPUT_GROWTH_RATE_ROW = 9
 INPUT_TABLE_HEADER_ROW = 10
 INPUT_TABLE_FIRST_ROW = INPUT_TABLE_HEADER_ROW + 1
 INPUT_TABLE_LAST_ROW = INPUT_TABLE_FIRST_ROW + len(CATEGORIES) - 1
@@ -280,6 +315,11 @@ def _write_input_sheet(ws, theme: Theme, scenario: ScenarioResult, peer_df: pd.D
         value=f"=LOOKUP(B{INPUT_PROMISED_AUM_ROW}, Config!$B${CONFIG_BRACKET_FIRST_ROW}:$B${CONFIG_BRACKET_LAST_ROW}, "
         f"Config!$A${CONFIG_BRACKET_FIRST_ROW}:$A${CONFIG_BRACKET_LAST_ROW})",
     )
+
+    ws.cell(row=INPUT_GROWTH_RATE_ROW, column=1, value="Assumed annual AUM growth (forecast)")
+    growth_cell = ws.cell(row=INPUT_GROWTH_RATE_ROW, column=2, value=0.05)
+    growth_cell.number_format = "0.0%"
+    _highlight_input(growth_cell, theme)
 
     headers = ["Fee category", "Current fee (bps)", "Promised fee (bps)", "Current amount", "Promised amount"]
     for col, header in enumerate(headers, start=1):
@@ -326,6 +366,7 @@ def _write_input_sheet(ws, theme: Theme, scenario: ScenarioResult, peer_df: pd.D
 
     _autosize(ws, {"A": 34, "B": 16, "C": 16, "D": 16, "E": 16})
     _protect_sheet(ws)
+    _set_print_layout(ws)
 
 
 # ---------------------------------------------------------------------------
@@ -525,30 +566,151 @@ def _median_points(bracket_idx: int, stats: PeerStats) -> list[tuple[object, obj
 # Dashboard sheet
 # ---------------------------------------------------------------------------
 
-def _write_dashboard_sheet(ws, theme: Theme, scenario: ScenarioResult, ws_stats) -> None:
-    _title(ws, "A1", "Fee Benchmark Dashboard", theme)
-    ws["A2"] = f"Client BP ID: {scenario.bp_id or '(new prospect)'}"
-    ws["A2"].font = theme.font(bold=True)
+DASHBOARD_FEE_TABLE_COLS = [
+    "Fee category",
+    "Current (bps)",
+    "Request (bps)",
+    "Current amount",
+    "Promised amount",
+    "Delta amount",
+    "Delta %",
+    "Forecast Y1 amount",
+]
 
+
+def _write_dashboard_sheet(ws, theme: Theme, scenario: ScenarioResult, ws_stats) -> None:
+    ws.sheet_view.showGridLines = False
+    border = _thin_border(theme)
+    n_cols = len(DASHBOARD_FEE_TABLE_COLS)
+    last_col = get_column_letter(n_cols)
+
+    ws.merge_cells(f"A1:{last_col}1")
+    _title(ws, "A1", "Fee Benchmark Dashboard", theme)
+    ws.row_dimensions[1].height = 26
+
+    ws.merge_cells(f"A2:{last_col}2")
+    ws["A2"] = f"Client BP ID: {scenario.bp_id or '(new prospect)'}"
+    ws["A2"].font = theme.font(bold=True, color=theme.colors["primary"])
+
+    # --- KPI cards -----------------------------------------------------
     kpi_labels = ["Current annual revenue", "Promised annual revenue", "Delta", "Delta %"]
     for col, label in enumerate(kpi_labels, start=1):
         cell = ws.cell(row=4, column=col, value=label)
         cell.fill = PatternFill("solid", fgColor=theme.colors["kpi_fill"])
-        cell.font = theme.font(bold=True)
+        cell.font = theme.font(bold=True, color=theme.colors["primary"])
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center")
 
-    ws.cell(row=5, column=1, value="=SUM(Input!D11:D15)").number_format = theme.number_formats["currency"]
-    ws.cell(row=5, column=2, value="=SUM(Input!E11:E15)").number_format = theme.number_formats["currency"]
-    ws.cell(row=5, column=3, value="=B5-A5").number_format = theme.number_formats["currency"]
-    ws.cell(row=5, column=4, value='=IF(A5=0,"",C5/A5)').number_format = "0.0%"
+    kpi_current = ws.cell(
+        row=5, column=1, value=f"=SUM(Input!D{INPUT_TABLE_FIRST_ROW}:D{INPUT_TABLE_LAST_ROW})"
+    )
+    kpi_promised = ws.cell(
+        row=5, column=2, value=f"=SUM(Input!E{INPUT_TABLE_FIRST_ROW}:E{INPUT_TABLE_LAST_ROW})"
+    )
+    kpi_delta = ws.cell(row=5, column=3, value="=B5-A5")
+    kpi_delta_pct = ws.cell(row=5, column=4, value='=IF(A5=0,"",C5/A5)')
+    kpi_current.number_format = theme.number_formats["currency"]
+    kpi_promised.number_format = theme.number_formats["currency"]
+    kpi_delta.number_format = theme.number_formats["currency"]
+    kpi_delta_pct.number_format = "0.0%"
+    ws.row_dimensions[5].height = 22
+    for col in range(1, 5):
+        cell = ws.cell(row=5, column=col)
+        cell.border = border
+        cell.font = theme.font(size_key="size_header", bold=True)
+        cell.alignment = Alignment(horizontal="center")
+    _delta_conditional_format(ws, "C5:D5", theme)
 
+    row = 7
     if scenario.warnings:
-        ws.cell(row=7, column=1, value="Data-quality / estimation notes:")
-        ws.cell(row=7, column=1).font = theme.font(bold=True, color=theme.colors["warning"])
-        for i, warning in enumerate(scenario.warnings, start=8):
-            ws.cell(row=i, column=1, value=f"- {warning}")
-        chart_start_row = 8 + len(scenario.warnings) + 2
-    else:
-        chart_start_row = 9
+        ws.cell(row=row, column=1, value="Data-quality / estimation notes:")
+        ws.cell(row=row, column=1).font = theme.font(bold=True, color=theme.colors["warning"])
+        row += 1
+        for warning in scenario.warnings:
+            ws.cell(row=row, column=1, value=f"- {warning}")
+            row += 1
+        row += 1
+
+    # --- Fee detail by category -----------------------------------------
+    _section_header(ws, row, "Fee Detail by Category", n_cols, theme)
+    row += 1
+
+    table_header_row = row
+    for col, header in enumerate(DASHBOARD_FEE_TABLE_COLS, start=1):
+        cell = ws.cell(row=table_header_row, column=col, value=header)
+        cell.border = border
+    _style_header_row(ws, table_header_row, n_cols, theme)
+    row += 1
+
+    first_data_row = row
+    for idx, category in enumerate(CATEGORIES):
+        input_row = INPUT_TABLE_FIRST_ROW + idx
+        values = [
+            f"=Input!A{input_row}",
+            f"=Input!B{input_row}",
+            f"=Input!C{input_row}",
+            f"=Input!D{input_row}",
+            f"=Input!E{input_row}",
+            f"=E{row}-D{row}",
+            f'=IF(D{row}=0,"",F{row}/D{row})',
+            f"=E{row}*(1+Input!$B${INPUT_GROWTH_RATE_ROW})",
+        ]
+        zebra = idx % 2 == 1
+        for col, value in enumerate(values, start=1):
+            cell = ws.cell(row=row, column=col, value=value)
+            cell.border = border
+            if zebra:
+                cell.fill = PatternFill("solid", fgColor="F2F2F2")
+        ws.cell(row=row, column=2).number_format = theme.number_formats["bps"]
+        ws.cell(row=row, column=3).number_format = theme.number_formats["bps"]
+        ws.cell(row=row, column=4).number_format = theme.number_formats["currency"]
+        ws.cell(row=row, column=5).number_format = theme.number_formats["currency"]
+        ws.cell(row=row, column=6).number_format = theme.number_formats["currency"]
+        ws.cell(row=row, column=7).number_format = "0.0%"
+        ws.cell(row=row, column=8).number_format = theme.number_formats["currency"]
+        row += 1
+    last_data_row = row - 1
+
+    total_row = row
+    total_values = {
+        1: "Total",
+        2: f'=IF(Input!B{INPUT_CURRENT_AUM_ROW}=0,"",D{total_row}/Input!B{INPUT_CURRENT_AUM_ROW}*10000)',
+        3: f'=IF(Input!B{INPUT_PROMISED_AUM_ROW}=0,"",E{total_row}/Input!B{INPUT_PROMISED_AUM_ROW}*10000)',
+        4: f"=SUM(D{first_data_row}:D{last_data_row})",
+        5: f"=SUM(E{first_data_row}:E{last_data_row})",
+        6: f"=E{total_row}-D{total_row}",
+        7: f'=IF(D{total_row}=0,"",F{total_row}/D{total_row})',
+        8: f"=SUM(H{first_data_row}:H{last_data_row})",
+    }
+    for col, value in total_values.items():
+        cell = ws.cell(row=total_row, column=col, value=value)
+        cell.border = border
+        cell.font = theme.font(bold=True)
+        cell.fill = PatternFill("solid", fgColor=theme.colors["kpi_fill"])
+    ws.cell(row=total_row, column=2).number_format = theme.number_formats["bps"]
+    ws.cell(row=total_row, column=3).number_format = theme.number_formats["bps"]
+    ws.cell(row=total_row, column=4).number_format = theme.number_formats["currency"]
+    ws.cell(row=total_row, column=5).number_format = theme.number_formats["currency"]
+    ws.cell(row=total_row, column=6).number_format = theme.number_formats["currency"]
+    ws.cell(row=total_row, column=7).number_format = "0.0%"
+    ws.cell(row=total_row, column=8).number_format = theme.number_formats["currency"]
+
+    _delta_conditional_format(ws, f"F{first_data_row}:G{total_row}", theme)
+
+    note_row = total_row + 1
+    ws.merge_cells(f"A{note_row}:{last_col}{note_row}")
+    ws.cell(
+        row=note_row,
+        column=1,
+        value=f'=CONCATENATE("Forecast assumes ", TEXT(Input!$B${INPUT_GROWTH_RATE_ROW}, "0.0%"), '
+        f'" annual AUM growth at the requested fee (see Input sheet).")',
+    )
+    ws.cell(row=note_row, column=1).font = theme.font(color=theme.colors["primary"])
+
+    chart_start_row = note_row + 3
+
+    # --- Peer benchmarking charts ----------------------------------------
+    _section_header(ws, chart_start_row - 1, "Peer Benchmarking", n_cols, theme)
 
     bracket_legend = ", ".join(f"{i + 1}={label}" for i, label in enumerate(BRACKET_LABELS))
 
@@ -558,12 +720,13 @@ def _write_dashboard_sheet(ws, theme: Theme, scenario: ScenarioResult, ws_stats)
     for idx, category in enumerate(CATEGORIES):
         chart = _build_category_chart(ws_stats, idx, category, theme, bracket_legend)
         col = 1 + (idx % charts_per_row) * chart_width_cols
-        row = chart_start_row + (idx // charts_per_row) * chart_height_rows
-        anchor = f"{get_column_letter(col)}{row}"
+        chart_row = chart_start_row + (idx // charts_per_row) * chart_height_rows
+        anchor = f"{get_column_letter(col)}{chart_row}"
         ws.add_chart(chart, anchor)
 
-    _autosize(ws, {"A": 26, "B": 22, "C": 18, "D": 12})
+    _autosize(ws, {"A": 26, "B": 16, "C": 16, "D": 18, "E": 18, "F": 16, "G": 12, "H": 18})
     _protect_sheet(ws)
+    _set_print_layout(ws)
 
 
 def _build_category_chart(ws_stats, category_idx: int, category: Category, theme: Theme, bracket_legend: str) -> ScatterChart:
@@ -575,33 +738,115 @@ def _build_category_chart(ws_stats, category_idx: int, category: Category, theme
     prom_x_col, prom_y_col = base_col + 8, base_col + 9
 
     chart = ScatterChart()
+    chart.scatterStyle = "lineMarker"
     chart.title = category.value.replace("_", " ").title()
+    chart.title.overlay = False
     chart.style = 2
     chart.height = 8
-    chart.width = 15
+    chart.width = 17
     chart.x_axis.title = f"AUM Bracket ({bracket_legend})"
+    chart.x_axis.title.overlay = False
+    chart.x_axis.title.tx.rich.bodyPr.rot = 0  # force horizontal, below the axis (not the vertical default)
     chart.y_axis.title = "Fee (bps)"
     chart.x_axis.scaling.min = 0.5
     chart.x_axis.scaling.max = len(BRACKETS) + 0.5
     chart.x_axis.majorUnit = 1
+    chart.x_axis.majorTickMark = "out"
+    chart.y_axis.majorTickMark = "out"
+    chart.x_axis.axPos = "b"
+    chart.y_axis.axPos = "l"
+    chart.y_axis.delete = False
+    chart.y_axis.tickLblPos = "nextTo"
+    chart.y_axis.numFmt = "#,##0"
+    chart.legend = None
 
-    box_series = _line_series(ws_stats, box_x_col, box_y_col, BOX_FIRST_ROW, BOX_LAST_ROW, "Peer box (Q1-Q3)", theme.colors["box_outline"], width=20000)
-    whisker_series = _line_series(ws_stats, wh_x_col, wh_y_col, BOX_FIRST_ROW, BOX_LAST_ROW, "Peer whiskers (min-max)", theme.colors["whisker_line"], width=12000)
-    median_series = _line_series(ws_stats, med_x_col, med_y_col, BOX_FIRST_ROW, MEDIAN_LAST_ROW, "Peer median", theme.colors["median_line"], width=26000)
+    box_series_list = _box_series_list(ws_stats, box_x_col, box_y_col, theme.colors["box_outline"])
+    whisker_series_list = _whisker_series_list(ws_stats, wh_x_col, wh_y_col, theme.colors["whisker_line"])
+    median_series_list = _median_series_list(ws_stats, med_x_col, med_y_col, theme.colors["median_line"])
     current_series = _marker_series(ws_stats, cur_x_col, cur_y_col, CLIENT_ROW, "Current", theme.colors["marker_current"], "circle")
     promised_series = _marker_series(ws_stats, prom_x_col, prom_y_col, CLIENT_ROW, "Promised", theme.colors["marker_promised"], "diamond")
 
-    for series in (box_series, whisker_series, median_series, current_series, promised_series):
+    series_list = [*box_series_list, *whisker_series_list, *median_series_list, current_series, promised_series]
+    for series in series_list:
         chart.series.append(series)
 
     return chart
 
 
-def _line_series(ws, x_col: int, y_col: int, first_row: int, last_row: int, title: str, color: str, width: int) -> Series:
+def _box_series_list(ws, x_col: int, y_col: int, color: str) -> list[Series]:
+    """One closed 5-point rectangle series per bracket instead of a single
+    series spanning every bracket with `=NA()` gap rows between them — see
+    `_whisker_series_list` for why that gap approach isn't reliable."""
+    series_list = []
+    for bracket_idx in range(len(BRACKETS)):
+        base_row = BOX_FIRST_ROW + bracket_idx * BOX_ROWS_PER_BRACKET
+        series_list.append(
+            _line_series(ws, x_col, y_col, base_row, base_row + 4, "Peer box (Q1-Q3)", color, width=20000)
+        )
+    return series_list
+
+
+def _median_series_list(ws, x_col: int, y_col: int, color: str) -> list[Series]:
+    """One short 2-point series per bracket for the median tick, instead of
+    a single series spanning every bracket with `=NA()` gap rows between
+    them — see `_whisker_series_list` for why that gap approach isn't
+    reliable."""
+    series_list = []
+    for bracket_idx in range(len(BRACKETS)):
+        base_row = BOX_FIRST_ROW + bracket_idx * MEDIAN_ROWS_PER_BRACKET
+        series_list.append(
+            _line_series(ws, x_col, y_col, base_row, base_row + 1, "Peer median", color, width=26000)
+        )
+    return series_list
+
+
+def _whisker_series_list(ws, x_col: int, y_col: int, color: str) -> list[Series]:
+    """One short 2-point line series per whisker segment (lower: min-q1,
+    upper: q3-max) per bracket, instead of a single series spanning every
+    bracket with `=NA()` gap rows — Excel doesn't reliably break the line at
+    those gaps, which drew one zig-zagging "saw" line across all brackets.
+    """
+    series_list = []
+    for bracket_idx in range(len(BRACKETS)):
+        base_row = BOX_FIRST_ROW + bracket_idx * BOX_ROWS_PER_BRACKET
+        for offset in (0, 3):  # rows 0-1 = min-q1, rows 3-4 = q3-max
+            series_list.append(
+                _line_series(
+                    ws,
+                    x_col,
+                    y_col,
+                    base_row + offset,
+                    base_row + offset + 1,
+                    "Peer whiskers (min-max)",
+                    color,
+                    width=12000,
+                    marker_symbol="circle",
+                    marker_size=5,
+                )
+            )
+    return series_list
+
+
+def _line_series(
+    ws,
+    x_col: int,
+    y_col: int,
+    first_row: int,
+    last_row: int,
+    title: str,
+    color: str,
+    width: int,
+    marker_symbol: str = "none",
+    marker_size: int = 5,
+) -> Series:
     xref = Reference(ws, min_col=x_col, min_row=first_row, max_row=last_row)
     yref = Reference(ws, min_col=y_col, min_row=first_row, max_row=last_row)
     series = Series(yref, xref, title=title)
-    series.marker = Marker(symbol="none")
+    series.marker = Marker(symbol=marker_symbol)
+    if marker_symbol != "none":
+        series.marker.size = marker_size
+        series.marker.graphicalProperties.solidFill = color
+        series.marker.graphicalProperties.line.solidFill = color
     series.graphicalProperties.line.solidFill = color
     series.graphicalProperties.line.width = width
     series.smooth = False
