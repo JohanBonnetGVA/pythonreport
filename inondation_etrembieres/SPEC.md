@@ -34,7 +34,10 @@ These events are used to **validate** the model (did it predict a high probabili
    **Target:** daily peak discharge (m³/s), predicted as a **regression**, then compared to the threshold.
 2. **Training data:** full daily history (≥ 20 years, ERA5 + gauge), not only the 2 events.
 3. **Features:** cumulative precipitation over 1/3/5 days, snow depth change, soil moisture, temperature, previous-day discharge.
-4. **Model:** logistic regression as the baseline, then gradient boosting (e.g. LightGBM), with calibrated probabilities.
+4. **Model (discharge regression):**
+   - **Baseline:** conceptual model **GR4J + CemaNeige** (snow module by elevation bands; INRAE, standard for French Alpine basins).
+   - **Main:** **LSTM** (NeuralHydrology), daily inputs from all points, 365-day lookback to capture snow storage and soil memory.
+   - Not tree models (LightGBM/RF) for the peak: they cannot predict above the highest training value, and 2023 was a record.
 5. **Forecast probability:** run the model on every member of the **ensemble weather forecast** (Open-Meteo Ensemble API). Probability = the share of members whose predicted discharge is ≥ 905 m³/s (plus the model's own error spread).
 6. **Validation:** time-based split (no random shuffle); report the error on high flows (> Q95), the Brier score for ≥ 905 m³/s, and a hindcast of Nov 2023 and 2015.
 
@@ -54,6 +57,7 @@ inondation_etrembieres/
 ├── pyproject.toml
 ├── data/                 # raw + processed (git-ignored except .gitkeep)
 ├── src/inondation_etrembieres/
+│   ├── store.py          # DuckDB tables built from data/raw/*.parquet
 │   ├── fetch_weather.py  # Open-Meteo forecast + archive
 │   ├── fetch_discharge.py# Hydroportail / BAFU
 │   ├── features.py

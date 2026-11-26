@@ -31,6 +31,7 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: pytest -q
       - run: inondation-fetch weather
+      - run: inondation-fetch db
       - name: Summary (2015 & 2023 events)
         run: |
           python - >> "$GITHUB_STEP_SUMMARY" <<'PY'
@@ -52,4 +53,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: weather-data
-          path: inondation_etrembieres/data/raw/weather/
+          path: |
+            inondation_etrembieres/data/raw/weather/
+            inondation_etrembieres/data/processed/inondation.duckdb

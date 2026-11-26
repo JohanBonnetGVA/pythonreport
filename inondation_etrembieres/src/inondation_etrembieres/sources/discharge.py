@@ -23,7 +23,7 @@ def load_csv(path: Path, time_col: str | None = None, value_col: str | None = No
 
 def daily_peak(s: pd.Series) -> pd.DataFrame:
     """Daily mean and peak discharge."""
-    return s.resample("D").agg(["mean", "max"]).add_prefix("discharge_")
+    return s.resample("D").agg(["mean", "max"]).add_prefix("discharge_").rename_axis("time")
 
 
 def load_station(station: str = DISCHARGE_STATION) -> pd.DataFrame:
