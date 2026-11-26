@@ -19,7 +19,11 @@ def main() -> None:
     if a.source in ("weather", "all"):
         for pt in config.POINTS:
             log.info("weather %s", pt.name)
-            weather.fetch_point(pt, a.start, a.end)
+            try:
+                weather.fetch_point(pt, a.start, a.end)
+            except weather.RateLimited as e:
+                log.error("Open-Meteo quota reached (%s); re-run later to resume.", e)
+                raise SystemExit(2)
     if a.source in ("discharge", "all"):
         log.info("discharge %s", config.DISCHARGE_STATION)
         discharge.load_station()

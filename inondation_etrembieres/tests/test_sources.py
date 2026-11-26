@@ -31,3 +31,22 @@ def test_store_roundtrip(tmp_path):
     df = store.query("""SELECT w.point, d.discharge_max FROM weather_daily w
                         JOIN discharge_daily d USING (time) WHERE w.point = $p ORDER BY time""", db, p="flaine")
     assert df["discharge_max"].tolist() == [800.0, 1010.0]
+
+
+def test_fetch_point_resumes_from_chunks(tmp_path, monkeypatch):
+    from datetime import date
+    from inondation_etrembieres import config
+    calls = []
+
+    def fake(point, a, b, s=None):
+        calls.append(a)
+        idx = pd.date_range(a, b + pd.Timedelta(days=1), freq="h", inclusive="left")
+        return pd.DataFrame({c: 1.0 for c in weather.HOURLY}, index=idx)
+
+    monkeypatch.setattr(weather, "DATA_RAW", tmp_path)
+    monkeypatch.setattr(weather, "fetch_hourly", fake)
+    pt = config.POINTS[0]
+    weather.fetch_point(pt, date(2014, 1, 1), date(2017, 12, 31))
+    assert len(calls) == 2
+    d = weather.fetch_point(pt, date(2014, 1, 1), date(2017, 12, 31))
+    assert len(calls) == 3 and len(d) == 4 * 365 + 1  # only the recent chunk is re-fetched
