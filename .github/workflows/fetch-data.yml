@@ -5,7 +5,9 @@ on:
   push:
     branches: ["claude/inondation-etrembieres-project-**"]
     paths:
-      - "inondation_etrembieres/src/**"
+      - "inondation_etrembieres/src/inondation_etrembieres/sources/**"
+      - "inondation_etrembieres/src/inondation_etrembieres/config.py"
+      - "inondation_etrembieres/src/inondation_etrembieres/store.py"
       - ".github/workflows/fetch-data.yml"
 
 permissions:
@@ -13,7 +15,7 @@ permissions:
 
 concurrency:
   group: fetch-data-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false  # never kill a download mid-way
 
 jobs:
   fetch:
@@ -43,16 +45,18 @@ jobs:
               for a, b in (("2015-04-25", "2015-05-03"), ("2023-11-01", "2023-11-16")):
                   print(d.loc[a:b, cols].round(3).to_markdown(), "\n")
           PY
-      - name: Commit data
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
-          git add -f data/raw/weather/*.parquet
-          git diff --cached --quiet || git commit -m "Update weather data [skip ci]"
-          git push
       - uses: actions/upload-artifact@v4
         with:
           name: weather-data
           path: |
             inondation_etrembieres/data/raw/weather/
             inondation_etrembieres/data/processed/inondation.duckdb
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
+          git add -f data/raw/weather/*.parquet
+          git diff --cached --quiet && exit 0
+          git commit -m "Update weather data [skip ci]"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
