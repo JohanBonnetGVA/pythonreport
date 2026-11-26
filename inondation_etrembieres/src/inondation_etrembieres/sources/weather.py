@@ -13,7 +13,7 @@ HOURLY = (
     "temperature_2m", "precipitation", "rain", "snowfall", "snow_depth",
     "soil_moisture_0_to_7cm", "soil_moisture_7_to_28cm", "soil_moisture_28_to_100cm",
 )
-CHUNK_YEARS = 5
+CHUNK_YEARS = 2  # smaller requests avoid read timeouts
 RATE_LIMIT_WAIT_S = 120   # free tier: 600/min, 5 000/h, 10 000/day weighted calls
 RATE_LIMIT_MAX_WAIT_S = 3900
 log = logging.getLogger(__name__)
