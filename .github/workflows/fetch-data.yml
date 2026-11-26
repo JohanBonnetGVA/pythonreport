@@ -1,0 +1,55 @@
+name: fetch-data
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/inondation-etrembieres-project-**"]
+    paths:
+      - "inondation_etrembieres/src/**"
+      - ".github/workflows/fetch-data.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fetch-data-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: inondation_etrembieres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+      - run: inondation-fetch weather
+      - name: Summary (2015 & 2023 events)
+        run: |
+          python - >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import pandas as pd, pathlib
+          cols = ["precipitation_sum", "snowfall_sum", "snow_depth_last", "snow_depth_loss", "soil_moisture_0_to_7cm_mean", "temperature_2m_mean"]
+          for f in sorted(pathlib.Path("data/raw/weather").glob("*.parquet")):
+              d = pd.read_parquet(f)
+              print(f"### {f.stem} ({len(d)} days, {d.index.min():%Y-%m-%d} → {d.index.max():%Y-%m-%d})")
+              for a, b in (("2015-04-25", "2015-05-03"), ("2023-11-01", "2023-11-16")):
+                  print(d.loc[a:b, cols].round(3).to_markdown(), "\n")
+          PY
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
+          git add -f data/raw/weather/*.parquet
+          git diff --cached --quiet || git commit -m "Update weather data [skip ci]"
+          git push
+      - uses: actions/upload-artifact@v4
+        with:
+          name: weather-data
+          path: inondation_etrembieres/data/raw/weather/
