@@ -20,7 +20,7 @@ concurrency:
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 240
     defaults:
       run:
         working-directory: inondation_etrembieres
@@ -34,7 +34,9 @@ jobs:
       - run: pytest -q
       - run: inondation-fetch weather
       - run: inondation-fetch db
+        if: ${{ !cancelled() }}
       - name: Summary (2015 & 2023 events)
+        if: ${{ !cancelled() }}
         run: |
           python - >> "$GITHUB_STEP_SUMMARY" <<'PY'
           import pandas as pd, pathlib
@@ -45,17 +47,19 @@ jobs:
               for a, b in (("2015-04-25", "2015-05-03"), ("2023-11-01", "2023-11-16")):
                   print(d.loc[a:b, cols].round(3).to_markdown(), "\n")
           PY
-      - uses: actions/upload-artifact@v4
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
         with:
           name: weather-data
           path: |
             inondation_etrembieres/data/raw/weather/
             inondation_etrembieres/data/processed/inondation.duckdb
-      - name: Commit data
+      - name: Commit data (also partial progress)
+        if: ${{ !cancelled() }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898+github-actions[bot]@users.noreply.github.com"
-          git add -f data/raw/weather/*.parquet
+          git add -f data/raw/weather/*.parquet 2>/dev/null || exit 0
           git diff --cached --quiet && exit 0
           git commit -m "Update weather data [skip ci]"
           git pull --rebase origin "${GITHUB_REF_NAME}"
