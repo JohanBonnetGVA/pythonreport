@@ -1,4 +1,5 @@
-"""Open-Meteo ERA5-Land archive: precipitation, snow, soil moisture, temperature."""
+"""Open-Meteo archive, model era5_seamless: ERA5-Land (~9 km) for snow, soil, temperature;
+ERA5 (~25 km) fills precipitation/rain/snowfall, which ERA5-Land does not serve on Open-Meteo."""
 import logging
 import time
 from datetime import date, timedelta
@@ -13,6 +14,7 @@ HOURLY = (
     "temperature_2m", "precipitation", "rain", "snowfall", "snow_depth",
     "soil_moisture_0_to_7cm", "soil_moisture_7_to_28cm", "soil_moisture_28_to_100cm",
 )
+MODEL = "era5_seamless"
 CHUNK_YEARS = 2  # smaller requests avoid read timeouts
 RATE_LIMIT_WAIT_S = 120   # free tier: 600/min, 5 000/h, 10 000/day weighted calls
 RATE_LIMIT_MAX_WAIT_S = 3900
@@ -50,22 +52,27 @@ def fetch_hourly(point: Point, start: date, end: date, s=None) -> pd.DataFrame:
     df = pd.DataFrame(_get(s, {
         "latitude": point.lat, "longitude": point.lon, "elevation": point.elevation,
         "start_date": start.isoformat(), "end_date": end.isoformat(),
-        "hourly": ",".join(HOURLY), "models": "era5_land", "timezone": TIMEZONE,
+        "hourly": ",".join(HOURLY), "models": MODEL, "timezone": TIMEZONE,
     })["hourly"])
+    empty = [c for c in HOURLY if c not in df or df[c].isna().all()]
+    if empty:  # fail loudly: an all-null variable would silently become 0 after resampling
+        raise ValueError(f"{point.name} {start}→{end}: no data for {empty} (model {MODEL})")
     df["time"] = pd.to_datetime(df["time"])
     return df.set_index("time")
 
 
 def to_daily(h: pd.DataFrame) -> pd.DataFrame:
     """Daily aggregates + snowmelt proxy (daily snow-depth loss)."""
-    d = h.resample("D").agg({
+    r = h.resample("D")
+    sums = r[["precipitation", "rain", "snowfall"]].sum(min_count=1)  # NaN stays NaN, not 0
+    d = r.agg({
         "temperature_2m": ["mean", "min", "max"],
-        "precipitation": "sum", "rain": "sum", "snowfall": "sum",
         "snow_depth": "last",
         "soil_moisture_0_to_7cm": "mean", "soil_moisture_7_to_28cm": "mean",
         "soil_moisture_28_to_100cm": "mean",
     })
     d.columns = [f"{c}_{f}" for c, f in d.columns]
+    d = d.join(sums.add_suffix("_sum"))
     return _snow_loss(d)
 
 

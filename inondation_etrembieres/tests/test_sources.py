@@ -50,3 +50,21 @@ def test_fetch_point_resumes_from_chunks(tmp_path, monkeypatch):
     assert len(calls) == 2
     d = weather.fetch_point(pt, date(2014, 1, 1), date(2017, 12, 31))
     assert len(calls) == 3 and len(d) == 4 * 365 + 1  # only the recent chunk is re-fetched
+
+
+def test_all_null_variable_fails(monkeypatch):
+    import pytest
+    from datetime import date
+    from inondation_etrembieres import config
+    payload = {"hourly": {"time": ["2023-11-01T00:00"], **{c: [1.0] for c in weather.HOURLY}}}
+    payload["hourly"]["rain"] = [None]
+    monkeypatch.setattr(weather, "_get", lambda s, p: payload)
+    with pytest.raises(ValueError, match="rain"):
+        weather.fetch_hourly(config.POINTS[0], date(2023, 11, 1), date(2023, 11, 1), s=object())
+
+
+def test_daily_sum_keeps_nan():
+    idx = pd.date_range("2023-11-01", periods=24, freq="h")
+    h = pd.DataFrame({c: 1.0 for c in weather.HOURLY}, index=idx)
+    h["rain"] = float("nan")
+    assert weather.to_daily(h)["rain_sum"].isna().all()
