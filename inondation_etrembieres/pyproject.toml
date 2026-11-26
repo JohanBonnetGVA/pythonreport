@@ -2,9 +2,10 @@
 name = "inondation-etrembieres"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = ["duckdb>=1.1", "pandas>=2.2", "pyarrow>=15", "requests>=2.31"]
+dependencies = ["duckdb>=1.1", "numba>=0.60", "pandas>=2.2", "scikit-learn>=1.5", "scipy>=1.13", "pyarrow>=15", "requests>=2.31"]
 
 [project.optional-dependencies]
+lstm = ["torch>=2.4"]
 dev = ["pytest>=8", "tabulate>=0.9"]
 
 [project.scripts]

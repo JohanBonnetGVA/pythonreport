@@ -1,0 +1,58 @@
+name: models
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/inondation-etrembieres-project-**"]
+    paths:
+      - "inondation_etrembieres/src/inondation_etrembieres/models/**"
+      - "inondation_etrembieres/src/inondation_etrembieres/manager.py"
+      - "inondation_etrembieres/src/inondation_etrembieres/dataset.py"
+      - "inondation_etrembieres/src/inondation_etrembieres/metrics.py"
+      - "inondation_etrembieres/data/raw/discharge/*.csv"
+      - ".github/workflows/models.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: models-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: inondation_etrembieres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -e ".[dev,lstm]"
+      - run: pytest -q
+      - name: Check data
+        id: data
+        run: |
+          if ls data/raw/discharge/*2170*.csv >/dev/null 2>&1 && ls data/raw/weather/*.parquet >/dev/null 2>&1; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Missing discharge CSV (data/raw/discharge/*2170*.csv) or weather parquet — skipping model comparison."
+          fi
+      - if: steps.data.outputs.ready == 'true'
+        run: |
+          inondation-fetch discharge
+          inondation-fetch db
+          inondation-fetch models | tee comparison.txt
+          { echo '```'; cat comparison.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - if: steps.data.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-comparison
+          path: |
+            inondation_etrembieres/data/processed/*.csv
+            inondation_etrembieres/data/processed/simulations.parquet
