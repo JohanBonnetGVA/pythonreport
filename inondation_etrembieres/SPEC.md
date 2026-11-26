@@ -17,7 +17,7 @@ The model is trained on past data, including the reference floods of **November 
 | Snow cover / snow depth, snowmelt | rain-on-snow, melt contribution | Open-Meteo (ERA5-Land) |
 | Soil moisture (0–7 cm, 7–28 cm) | catchment saturation | Open-Meteo (ERA5-Land) |
 | Temperature (0 °C isotherm proxy) | rain vs snow | Open-Meteo |
-| River discharge (m³/s) | target + current state | BAFU station **2170 Arve – Genève Bout du Monde** (CH, since 1904, just downstream); Vigicrues/Hydroportail station **Reignier-Ésery** (FR, just upstream) |
+| River discharge (m³/s) | target + current state | BAFU station **2170 Arve – Genève Bout du Monde** (CH, since 1904, just downstream) |
 
 Catchment variables are taken as a **basin average** over the upper Arve (Chamonix → Étrembières), not just at the town.
 
@@ -62,5 +62,5 @@ inondation_etrembieres/
 └── tests/
 ```
 
-## 8. Open questions
-- Reignier-Ésery station code and data access (Hydroportail export / API)?
+## 8. Not used
+- **Reignier-Ésery** gauge (FR): only ~90 min upstream of Étrembières, which is too short a lead time for a D+1–D+7 daily forecast; the station code is unknown and the data is unreliable. It could be added later for short-term (hourly) nowcasting.
