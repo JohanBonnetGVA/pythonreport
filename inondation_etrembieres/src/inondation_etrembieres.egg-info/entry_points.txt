@@ -1,2 +1,0 @@
-[console_scripts]
-inondation-fetch = inondation_etrembieres.cli:main
