@@ -30,15 +30,16 @@ Catchment variables are taken as a **basin average** over the upper Arve (Chamon
 These events are used to **validate** the model (did it predict a high probability?). Two events are not enough to train on by themselves.
 
 ## 5. Modelling approach
-1. **Target:** flood = daily peak discharge above a threshold (e.g. vigilance level or Q10 return period, to be set from gauge data).
+1. **Flood threshold:** **905 m³/s at station 2170** (2015 peak level). Flood = daily peak discharge ≥ 905 m³/s.
+   **Target:** daily peak discharge (m³/s), predicted as a **regression**, then compared to the threshold.
 2. **Training data:** full daily history (≥ 20 years, ERA5 + gauge), not only the 2 events.
 3. **Features:** cumulative precipitation over 1/3/5 days, snow depth change, soil moisture, temperature, previous-day discharge.
 4. **Model:** logistic regression as the baseline, then gradient boosting (e.g. LightGBM), with calibrated probabilities.
-5. **Forecast probability:** run the model on every member of the **ensemble weather forecast** (Open-Meteo Ensemble API). Probability = the share of members that exceed the flood threshold.
-6. **Validation:** time-based split (no random shuffle); report Brier score, ROC-AUC and recall on flood days; hindcast Nov 2023 and 2015.
+5. **Forecast probability:** run the model on every member of the **ensemble weather forecast** (Open-Meteo Ensemble API). Probability = the share of members whose predicted discharge is ≥ 905 m³/s (plus the model's own error spread).
+6. **Validation:** time-based split (no random shuffle); report the error on high flows (> Q95), the Brier score for ≥ 905 m³/s, and a hindcast of Nov 2023 and 2015.
 
 > **Best practice:**
-> - Floods are rare, so the classes are imbalanced. Use class weights and judge the model with Brier score and recall, not accuracy.
+> - Only 2 days have reached ≥ 905 m³/s since 1904, which is too few to train a classifier. So the model predicts discharge (regression), weighting high flows more, and the probability comes from the threshold.
 > - Split train/test by time so the model never sees future data during training.
 > - Take the probability from ensemble members so it reflects real forecast uncertainty.
 
@@ -62,5 +63,4 @@ inondation_etrembieres/
 ```
 
 ## 8. Open questions
-- Flood threshold: vigilance level or return period (e.g. Q10 at station 2170)?
 - Reignier-Ésery station code and data access (Hydroportail export / API)?
