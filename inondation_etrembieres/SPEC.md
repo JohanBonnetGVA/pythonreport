@@ -7,7 +7,8 @@ The model is trained on past data, including the reference floods of **November 
 ## 2. Scope
 - **Location:** Étrembières (Haute-Savoie, FR), on the Arve river, upstream of Geneva.
 - **Horizon:** D+0 to D+7, daily.
-- **Output:** a flood probability (0–100 %) per day, with a risk level (low / moderate / high).
+- **Output:** a flood probability (0–100 %) per day, with a risk level (low / moderate / high), as data (CSV/Parquet).
+- **Out of scope (for now):** HTML, charts, dashboard.
 
 ## 3. Input variables
 | Variable | Role | Source (to confirm) |
@@ -16,15 +17,15 @@ The model is trained on past data, including the reference floods of **November 
 | Snow cover / snow depth, snowmelt | rain-on-snow, melt contribution | Open-Meteo (ERA5-Land) |
 | Soil moisture (0–7 cm, 7–28 cm) | catchment saturation | Open-Meteo (ERA5-Land) |
 | Temperature (0 °C isotherm proxy) | rain vs snow | Open-Meteo |
-| River discharge (m³/s) | target + current state | Hydroportail (FR) station on the Arve near Étrembières; BAFU station *Arve – Genève Bout du Monde* (CH) |
+| River discharge (m³/s) | target + current state | BAFU station **2170 Arve – Genève Bout du Monde** (CH, since 1904, just downstream); Vigicrues/Hydroportail station **Reignier-Ésery** (FR, just upstream) |
 
 Catchment variables are taken as a **basin average** over the upper Arve (Chamonix → Étrembières), not just at the town.
 
 ## 4. Reference events
-| Event | Notes |
-|---|---|
-| Nov 2023 | Successive storms (Ciarán / Domingos), high Arve discharge, saturated soils |
-| 2015 | Arve flood (exact date and peak to confirm from gauge data) |
+| Event | Peak (Genève Bout du Monde) | Notes |
+|---|---|---|
+| 15 Nov 2023 | ~1010 m³/s (record since 1904) | Successive storms on saturated soils; ~1200 m³/s est. at Reignier-Ésery |
+| End Apr – 2 May 2015 | ~905 m³/s (2 May) | Heavy rain from end of April + snowmelt; lower than 2023 |
 
 These events are used to **validate** the model (did it predict a high probability?). Two events are not enough to train on by themselves.
 
@@ -41,10 +42,9 @@ These events are used to **validate** the model (did it predict a high probabili
 > - Split train/test by time so the model never sees future data during training.
 > - Take the probability from ensemble members so it reflects real forecast uncertainty.
 
-## 6. Output / display
-- A Plotly time series: past discharge + 7-day probability bars, with the flood threshold line.
-- A risk table: date, rain (mm), snow, soil moisture, probability, level.
-- An export to Excel/HTML report (reusing `excel_report.py` style / `theme.json` where possible).
+## 6. Output
+- `data/processed/forecast_probability.csv`: date, rain (mm), snow depth, soil moisture, predicted discharge, probability, level.
+- Saved model + metrics (`data/models/`).
 
 ## 7. Project structure
 ```
@@ -57,12 +57,10 @@ inondation_etrembieres/
 │   ├── fetch_discharge.py# Hydroportail / BAFU
 │   ├── features.py
 │   ├── model.py          # train, calibrate, save
-│   ├── predict.py        # ensemble forecast -> probability
-│   └── report.py         # charts / table
+│   └── predict.py        # ensemble forecast -> probability
 └── tests/
 ```
 
 ## 8. Open questions
-- Exact gauge station code and flood threshold (vigilance level vs return period)?
-- Exact date of the 2015 event?
-- Display target: HTML report, Excel, or web dashboard?
+- Flood threshold: vigilance level or return period (e.g. Q10 at station 2170)?
+- Reignier-Ésery station code and data access (Hydroportail export / API)?
