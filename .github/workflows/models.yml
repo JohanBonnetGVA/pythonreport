@@ -38,10 +38,10 @@ jobs:
       - name: Check data
         id: data
         run: |
-          if ls data/raw/discharge/V022000202_daily.parquet >/dev/null 2>&1 && ls data/raw/weather/*.parquet >/dev/null 2>&1; then
+          if ls data/raw/discharge/V0220002_daily.parquet >/dev/null 2>&1 && ls data/raw/weather/*.parquet >/dev/null 2>&1; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::Missing Reignier discharge (data/raw/discharge/V022000202_daily.parquet) or weather parquet — skipping model comparison."
+            echo "::warning::Missing Reignier discharge (data/raw/discharge/V0220002_daily.parquet) or weather parquet — skipping model comparison."
           fi
       - if: steps.data.outputs.ready == 'true'
         run: |

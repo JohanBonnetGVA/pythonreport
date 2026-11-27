@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover
     def njit(f=None, **_):
         return f if f else (lambda g: g)
 
-AREA_KM2 = 1975.0  # Arve at Geneva (to confirm with BAFU station sheet)
+AREA_KM2 = 1664.0  # Arve at Reignier-Ésery/Arthaz (to confirm on Hydroportail station sheet)
 BOUNDS = [(50, 2000), (-10, 5), (10, 500), (0.5, 6), (1, 8), (-2, 2)]
 WARMUP = 365
 
