@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import differential_evolution
 
-from .. import metrics
+from .. import config, metrics
 from ..dataset import Dataset, oudin_pet
 from .base import Model
 
@@ -120,7 +120,9 @@ class GR4JSnow(Model):
     def fit(self, data: Dataset, train: pd.Index, val: pd.Index) -> None:
         idx, forcing = train[WARMUP:], self._forcing(data)
         obs = data.y.loc[idx]
-        obj = lambda x: -metrics.kge(obs, self._run(forcing, x).loc[idx])
+        def obj(x):  # KGE for the overall regime + high-flow weighted NSE for the peaks
+            sim = self._run(forcing, x).loc[idx]
+            return -(0.5 * metrics.kge(obs, sim) + 0.5 * metrics.nse_weighted(obs, sim, config.HIGH_FLOW_POWER))
         self.params = differential_evolution(obj, BOUNDS, seed=self.seed, maxiter=60, tol=1e-4, polish=True).x
 
     def predict(self, data: Dataset) -> pd.Series:

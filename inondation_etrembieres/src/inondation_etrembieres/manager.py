@@ -81,8 +81,29 @@ class ModelManager:
                     continue
                 for k, v in metrics.event(self.data.y.loc[a:b], self.sims[n].loc[a:b], threshold).items():
                     r[f"{ev} {k}"] = v
+            r.update(self._relative_flood(n, threshold))
             rows.append(r)
         return pd.DataFrame(rows).set_index("model").sort_values("kge_test", ascending=False)
+
+    def _relative_flood(self, n: str, threshold: float) -> dict:
+        """Judge each model on its own scale (removes its systematic peak bias).
+
+        - rel_2015: flood if the model's 2023 peak ≥ the model's own 2015 peak.
+        - qmap: model threshold = model quantile matching the observed threshold's
+          quantile over the training period (usable for forecasts, not tied to one event).
+        """
+        sim, obs = self.sims[n], self.data.y
+        (a15, b15), (a23, b23) = EVENTS["2015 (train)"], EVENTS["2023 (test)"]
+        p15, p23 = sim.loc[a15:b15].max(), sim.loc[a23:b23].max()
+        tr, te = self._ix(self.split.train), self._ix(self.split.test)
+        q = float((obs.loc[tr].dropna() < threshold).mean())
+        thr_q = float(sim.loc[tr].dropna().quantile(q))
+        return {
+            "ratio_2023_2015 sim": p23 / p15, "ratio_2023_2015 obs": obs.loc[a23:b23].max() / obs.loc[a15:b15].max(),
+            "rel_2015 flood_2023": bool(p23 >= p15),
+            "qmap threshold": thr_q, "qmap flood_2015": bool(p15 >= thr_q), "qmap flood_2023": bool(p23 >= thr_q),
+            "qmap false_alarm_days_test": int(((sim.loc[te] >= thr_q) & (obs.loc[te] < threshold)).sum()),
+        }
 
     def save(self) -> None:
         out = config.DATA_PROCESSED

@@ -4,6 +4,7 @@ from sklearn.linear_model import RidgeCV
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
+from .. import config, metrics
 from ..dataset import Dataset
 from .base import Model
 
@@ -28,7 +29,7 @@ class Ridge(Model):
     def fit(self, data: Dataset, train: pd.Index, val: pd.Index) -> None:
         X, y = build(data).loc[train], data.y.loc[train]
         m = y.notna()
-        self.pipe.fit(X[m], y[m])
+        self.pipe.fit(X[m], y[m], ridgecv__sample_weight=metrics.flow_weights(y[m], config.HIGH_FLOW_POWER))
 
     def predict(self, data: Dataset) -> pd.Series:
         X = build(data)

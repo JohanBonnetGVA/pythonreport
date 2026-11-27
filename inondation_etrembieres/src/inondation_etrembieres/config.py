@@ -18,6 +18,7 @@ TIMEZONE = "Europe/Zurich"
 TARGET_STATION = "V0220002"   # Hub'Eau site L'Arve à Reignier-Ésery (daily mean since 1990)
 DISCHARGE_STATION = "2170"     # BAFU Arve – Genève, Bout du Monde (secondary / cross-check)
 FLOOD_EVENT_2015 = ("2015-04-25", "2015-05-10")
+HIGH_FLOW_POWER = 2.0  # loss weight (Q/mean Q)^p: makes models fit floods, not average days
 TARGET = "discharge_mean"  # daily mean: complete since 1990 (daily max only since 2019)
 FLOOD_THRESHOLD_M3S: float | None = None  # None → 2015 peak at TARGET_STATION (717 m³/s daily mean)
 

@@ -2,6 +2,7 @@
 import numpy as np
 import pandas as pd
 
+from .. import config, metrics
 from ..dataset import Dataset
 from .base import Model
 
@@ -11,7 +12,7 @@ SEQ = 365
 class LSTM(Model):
     name = "lstm"
 
-    def __init__(self, hidden: int = 64, epochs: int = 30, lr: float = 1e-3, seed: int = 0):
+    def __init__(self, hidden: int = 64, epochs: int = 60, lr: float = 1e-3, seed: int = 0):
         self.hidden, self.epochs, self.lr, self.seed = hidden, epochs, lr, seed
 
     def _x(self, data: Dataset) -> np.ndarray:
@@ -32,6 +33,7 @@ class LSTM(Model):
         pos = lambda ix: [i for i in data.y.index.get_indexer(ix) if i >= SEQ - 1 and not np.isnan(data.y.iloc[i])]
         tr, va = pos(train), pos(val)
         y = torch.tensor(((data.y - self.ymu) / self.ysd).to_numpy(np.float32))
+        w = torch.tensor(metrics.flow_weights(data.y.fillna(self.ymu), config.HIGH_FLOW_POWER).astype(np.float32))
 
         self.net = _Net(x.shape[1], self.hidden)
         opt = torch.optim.Adam(self.net.parameters(), lr=self.lr)
@@ -40,12 +42,12 @@ class LSTM(Model):
             self.net.train()
             for b in np.array_split(np.random.default_rng(self.seed).permutation(tr), max(1, len(tr) // 256)):
                 opt.zero_grad()
-                loss = torch.mean((self.net(self._windows(x, b)) - y[b]) ** 2)
+                loss = torch.mean(w[b] * (self.net(self._windows(x, b)) - y[b]) ** 2)  # high-flow weighted MSE
                 loss.backward()
                 opt.step()
             self.net.eval()
             with torch.no_grad():
-                v = torch.mean((self.net(self._windows(x, va)) - y[va]) ** 2).item()
+                v = torch.mean(w[va] * (self.net(self._windows(x, va)) - y[va]) ** 2).item()
             if v < best:  # early stopping on validation
                 best, state = v, {k: t.clone() for k, t in self.net.state_dict().items()}
         self.net.load_state_dict(state)
