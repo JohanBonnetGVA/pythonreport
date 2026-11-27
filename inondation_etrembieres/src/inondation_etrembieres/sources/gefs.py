@@ -26,7 +26,7 @@ from ._http import session
 log = logging.getLogger(__name__)
 REFORECAST = "https://noaa-gefs-retrospective.s3.amazonaws.com"
 OPERATIONAL = "https://noaa-gefs-pds.s3.amazonaws.com"
-LEAD_DAYS = 10  # reforecast files hold days 1–10; operational runs go to 16
+LEAD_DAYS = 16  # GEFS horizon: reforecast "Days:1-10" + "Days:10-16" files, operational f000–f384
 OUT = DATA_RAW / "gefs"
 _local = threading.local()
 
@@ -108,8 +108,9 @@ def fetch_reforecast(init: date) -> pd.DataFrame:
     import pygrib
 
     prefix = f"GEFSv12/reforecast/{init:%Y}/{init:%Y%m%d}00/"
-    keys = [k for k in list_keys(REFORECAST, prefix) if "Days:1-10" in k]
-    want = [k for k in keys if re.search(r"/(apcp_sfc|tmp_2m|hgt_sfc)_", k)]
+    keys = [k for k in list_keys(REFORECAST, prefix) if "Days:1-10" in k or (LEAD_DAYS > 10 and "Days:10-16" in k)]
+    want = [k for k in keys if re.search(r"/(apcp_sfc|tmp_2m|hgt_sfc)_", k)
+            and not ("Days:10-16" in k and "hgt_sfc" in k)]  # orography once is enough
     if not want:
         raise FileNotFoundError(f"No reforecast files under {prefix} (found {len(keys)} keys: {keys[:5]})")
     log.info("reforecast %s: %d files", init, len(want))
@@ -129,7 +130,7 @@ def fetch_reforecast(init: date) -> pd.DataFrame:
 
     with ThreadPoolExecutor(4) as ex:
         rows = [r for rs in ex.map(one, want) for r in rs]
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows).drop_duplicates(["member", "var", "start_h", "end_h", "point"])  # day-10 overlap
     # orography is member-independent in the reforecast: broadcast to all members
     z = df[df["var"] == "z"].drop(columns="member").drop_duplicates("point")
     df = df[df["var"] != "z"]
@@ -176,7 +177,7 @@ def fetch_operational(init: date, members: int = 30) -> pd.DataFrame:
             rows += _records([pygrib.fromstring(rr.content)], member, init)
         return rows
 
-    with ThreadPoolExecutor(16) as ex:
+    with ThreadPoolExecutor(32) as ex:
         rows = [r for rs in ex.map(one, jobs) for r in rs]
     return _to_daily(pd.DataFrame(rows), init)
 
@@ -186,10 +187,14 @@ def fetch(init: date) -> pd.DataFrame:
     out = OUT / f"{init:%Y%m%d}.parquet"
     if out.exists():
         cached = pd.read_parquet(out)
-        if cached["date"].nunique() >= LEAD_DAYS:  # re-fetch caches made with a shorter horizon
+        if cached["date"].nunique() >= LEAD_DAYS or cached.get("source_max_days") is not None:
+            # full horizon, or already the longest the source offers (flag set at fetch)
             return cached
         log.info("  %s: cache has %d days < %d, re-fetching", init, cached["date"].nunique(), LEAD_DAYS)
     d = fetch_reforecast(init) if init.year <= 2019 else fetch_operational(init)
+    if d["date"].nunique() < LEAD_DAYS:  # source shorter than requested: don't re-fetch forever
+        log.warning("  %s: source has only %d of %d lead days", init, d["date"].nunique(), LEAD_DAYS)
+        d["source_max_days"] = d["date"].nunique()
     out.parent.mkdir(parents=True, exist_ok=True)
     d.to_parquet(out)
     log.info("  %s: %d members, %d rows, precip day1–%d mean %.1f mm", init, d["member"].nunique(), len(d),

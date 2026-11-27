@@ -1,7 +1,7 @@
 """Hindcast: what flood probability would GEFS + GR4J have given before 2015 and 2023?
 
-For each 00Z init date (1–10 days before the peak) and each ensemble member:
-  weather = ERA5 history up to init−1 (model state: snow, soil, stores) + GEFS days 1–10,
+For each 00Z init date (1–16 days before the peak) and each ensemble member:
+  weather = ERA5 history up to init−1 (model state: snow, soil, stores) + GEFS days 1–16,
   run GR4J+snow (calibrated on 1990–2016), flood if Q ≥ the model's quantile-mapped threshold.
 Probability = share of members flooding on any forecast day.
 """
@@ -23,7 +23,7 @@ RAIN_SNOW = (0.0, 2.0)  # °C: all snow below, all rain above, linear in between
 
 
 def scenario(hist: Dataset, fc: pd.DataFrame, member: str, init: pd.Timestamp, temp: str = "gefs") -> Dataset:
-    """ERA5 up to init−1, then one GEFS member for days 1–10.
+    """ERA5 up to init−1, then one GEFS member for days 1–16.
 
     temp="era5": replace the forecast temperature by the observed (ERA5) one — a
     "perfect temperature forecast" experiment isolating the temperature error.
