@@ -14,9 +14,17 @@ from ..config import DATA_RAW
 from ._http import session
 
 BASE = "https://hubeau.eaufrance.fr/api/v2/hydrometrie"
-STATION = "V022000202"  # L'Arve à Reignier-Ésery
+STATION = "V022000202"  # L'Arve à Reignier-Ésery (current station, data from 2019)
+SITE = "V0220002"       # hydrometric site: may hold older stations with pre-2019 history
 SERIES = {"QmnJ": "discharge_mean", "QIXnJ": "discharge_max"}
 log = logging.getLogger(__name__)
+
+
+def site_stations(site: str = SITE) -> list[dict]:
+    """All stations (current and closed) of a hydrometric site."""
+    r = session().get(f"{BASE}/referentiel/stations", params={"code_site": site, "size": 100}, timeout=60)
+    r.raise_for_status()
+    return r.json().get("data", [])
 
 
 def station_info(code: str = STATION) -> dict:
@@ -53,19 +61,41 @@ def fetch_series(grandeur: str, start: date, end: date, code: str = STATION) -> 
     return out.sort_index()
 
 
-def fetch(start: date, end: date, code: str = STATION) -> pd.DataFrame:
-    """Daily mean + max (m³/s), same schema as BAFU daily → data/raw/discharge/<code>_daily.parquet."""
+def fetch(start: date, end: date, code: str = STATION, site: str = SITE) -> pd.DataFrame:
+    """Daily mean + max (m³/s), all stations of the site merged (current station wins on overlap).
+
+    Same schema as BAFU daily → data/raw/discharge/<code>_daily.parquet.
+    """
     try:
-        info = station_info(code)
-        log.info("Hub'Eau station %s: %s (%s)", code, info.get("libelle_station"), info.get("en_service"))
-    except Exception as e:  # informational only
-        log.warning("station lookup failed: %s", e)
-    parts = {}
-    for g, col in SERIES.items():
-        sr = fetch_series(g, start, end, code)
-        parts[col] = sr["value_m3s"]
-        parts[f"{col}_qualification"] = sr["qualification"]
-    d = pd.DataFrame(parts)
+        stations = site_stations(site)
+    except Exception as e:  # fall back to the current station only
+        log.warning("site lookup failed: %s", e)
+        stations = []
+    codes = [st["code_station"] for st in stations] or [code]
+    for st in stations:
+        log.info("site %s station %s: %s, open %s → %s", site, st.get("code_station"), st.get("libelle_station"),
+                 st.get("date_ouverture_station"), st.get("date_fermeture_station"))
+    codes = sorted(set(codes), key=lambda c: c == code)  # current station last → wins
+    merged: dict[str, pd.Series] = {}
+    for c in codes:
+        parts = {}
+        for g, col in SERIES.items():
+            try:
+                sr = fetch_series(g, start, end, c)
+            except ValueError as e:
+                log.info("%s", e)
+                continue
+            parts[col] = sr["value_m3s"]
+            parts[f"{col}_qualification"] = sr["qualification"]
+        if not parts:
+            continue
+        d = pd.DataFrame(parts).assign(source_station=c)
+        log.info("  %s: %d days %s → %s", c, len(d), d.index.min().date(), d.index.max().date())
+        for k in d:
+            merged[k] = d[k] if k not in merged else d[k].combine_first(merged[k])
+    if not merged:
+        raise ValueError(f"Hub'Eau: no data for site {site}")
+    d = pd.DataFrame(merged).sort_index()
     out = DATA_RAW / "discharge" / f"{code}_daily.parquet"
     out.parent.mkdir(parents=True, exist_ok=True)
     d.to_parquet(out)
