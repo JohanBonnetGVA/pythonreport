@@ -69,3 +69,11 @@ def test_condition_levels():
     assert C.level(z).tolist() == [0, 1, 2, 3, 0]  # last: dry catchment → no flood conditions
     z2 = z.assign(rain_on_snow=0.0, warming=2.0, snow_m=0.0)
     assert C.level(z2).max() == 0  # warming without snow → no melt → no flag
+
+
+def test_forecast_alert_levels():
+    from inondation_etrembieres.alerts import forecast_level
+    assert forecast_level(0.1, 0.0, 0.0, 0.1) == 0
+    assert forecast_level(0.6, 0.1, 0.0, 0.1) == 1
+    assert forecast_level(1.0, 0.6, 0.2, 0.2) == 2
+    assert forecast_level(1.0, 0.8, 0.3, 0.6) == 3

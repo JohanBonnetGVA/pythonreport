@@ -10,7 +10,7 @@ log = logging.getLogger(__name__)
 
 def main() -> None:
     p = argparse.ArgumentParser(prog="inondation-fetch")
-    p.add_argument("source", choices=("weather", "discharge", "hubeau", "db", "all", "models", "gefs", "hindcast", "conditions"))
+    p.add_argument("source", choices=("weather", "discharge", "hubeau", "db", "all", "models", "gefs", "hindcast", "conditions", "alerts"))
     p.add_argument("--start", type=lambda s: config.date.fromisoformat(s), default=config.START)
     p.add_argument("--end", type=lambda s: config.date.fromisoformat(s), default=config.END)
     p.add_argument("--temp", choices=("gefs", "era5"), default="gefs", help="hindcast: forecast or observed temperature")
@@ -46,6 +46,21 @@ def main() -> None:
     if a.source == "conditions":
         from .hindcast import run_conditions
         print(run_conditions().round(2).to_string(index=False))
+    if a.source == "alerts":
+        import pandas as pd
+        from . import alerts
+        from .dataset import load
+        from .hindcast import run, run_conditions
+        h = alerts.hard(load())
+        h.to_csv(config.DATA_PROCESSED / "alert_hard.csv")
+        print("HARD alert, events and last 30 days:")
+        for a_, b_ in (("2015-04-28", "2015-05-04"), ("2023-11-10", "2023-11-16")):
+            print(h.loc[a_:b_, ["color", "condition_level", "q_mean", "rise", "rain_3d_sigma", "rain_on_snow"]].round(2).to_string())
+        print(h.dropna(subset=["q_mean"]).iloc[-30:][["color", "condition_level", "q_mean", "rain_3d_sigma", "snow_m"]].round(2).to_string())
+        f = alerts.forecast(run_conditions(), run())
+        f.to_csv(config.DATA_PROCESSED / "alert_forecast.csv", index=False)
+        print("FORECAST alert (GEFS hindcast):")
+        print(f.round(2).to_string(index=False))
     if a.source == "models":
         from .dataset import load
         from .manager import ModelManager

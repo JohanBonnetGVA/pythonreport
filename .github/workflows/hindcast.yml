@@ -8,6 +8,7 @@ on:
       - "inondation_etrembieres/src/inondation_etrembieres/sources/gefs.py"
       - "inondation_etrembieres/src/inondation_etrembieres/hindcast.py"
       - "inondation_etrembieres/src/inondation_etrembieres/conditions.py"
+      - "inondation_etrembieres/src/inondation_etrembieres/alerts.py"
       - ".github/workflows/hindcast.yml"
 
 permissions:
@@ -47,7 +48,7 @@ jobs:
       - name: Hindcast
         run: |
           inondation-fetch db
-          { inondation-fetch hindcast --temp gefs; inondation-fetch hindcast --temp era5; inondation-fetch conditions; } | tee hindcast.txt
+          { inondation-fetch hindcast --temp gefs; inondation-fetch hindcast --temp era5; inondation-fetch conditions; inondation-fetch alerts; } | tee hindcast.txt
           { echo '```'; cat hindcast.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - if: always()
         uses: actions/upload-artifact@v4
