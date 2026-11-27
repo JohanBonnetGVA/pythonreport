@@ -3,14 +3,14 @@ import argparse
 import logging
 
 from . import config, store
-from .sources import discharge, weather
+from .sources import discharge, hubeau, weather
 
 log = logging.getLogger(__name__)
 
 
 def main() -> None:
     p = argparse.ArgumentParser(prog="inondation-fetch")
-    p.add_argument("source", choices=("weather", "discharge", "db", "all", "models"))
+    p.add_argument("source", choices=("weather", "discharge", "hubeau", "db", "all", "models"))
     p.add_argument("--start", type=lambda s: config.date.fromisoformat(s), default=config.START)
     p.add_argument("--end", type=lambda s: config.date.fromisoformat(s), default=config.END)
     a = p.parse_args()
@@ -24,6 +24,9 @@ def main() -> None:
             except weather.RateLimited as e:
                 log.error("Open-Meteo quota reached (%s); re-run later to resume.", e)
                 raise SystemExit(2)
+    if a.source in ("hubeau", "all"):
+        log.info("hubeau %s", hubeau.STATION)
+        hubeau.fetch(a.start, a.end)
     if a.source in ("discharge", "all"):
         log.info("discharge %s", config.DISCHARGE_STATION)
         discharge.load_station()

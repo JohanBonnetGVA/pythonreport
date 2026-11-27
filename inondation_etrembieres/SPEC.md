@@ -67,4 +67,4 @@ inondation_etrembieres/
 ```
 
 ## 8. Not used
-- **Reignier-Ésery** gauge (FR): only ~90 min upstream of Étrembières, which is too short a lead time for a D+1–D+7 daily forecast; the station code is unknown and the data is unreliable. It could be added later for short-term (hourly) nowcasting.
+- **Reignier-Ésery** gauge (FR, Hub'Eau `V022000202`, to confirm): fetched as a **secondary target / cross-check** only. Not an input: ~90 min upstream is too short a lead for D+1–D+7, and high-flow ratings are uncertain (~1200 m³/s est. in Nov 2023 vs ~1010 at Geneva downstream).

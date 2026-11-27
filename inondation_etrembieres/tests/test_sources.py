@@ -68,3 +68,28 @@ def test_daily_sum_keeps_nan():
     h = pd.DataFrame({c: 1.0 for c in weather.HOURLY}, index=idx)
     h["rain"] = float("nan")
     assert weather.to_daily(h)["rain_sum"].isna().all()
+
+
+def test_hubeau_parse(monkeypatch):
+    from datetime import date
+    from inondation_etrembieres.sources import hubeau
+
+    class R:
+        def __init__(self, j): self.j = j
+        def raise_for_status(self): pass
+        def json(self): return self.j
+
+    pages = [
+        {"data": [{"date_obs_elab": "2023-11-14", "resultat_obs_elab": 800000.0, "libelle_qualification": "Bonne"}],
+         "next": "https://x/page2"},
+        {"data": [{"date_obs_elab": "2023-11-15", "resultat_obs_elab": 1200000.0, "libelle_qualification": "Douteuse"}],
+         "next": None},
+    ]
+
+    class S:
+        def get(self, url, params=None, timeout=None): return R(pages.pop(0))
+
+    monkeypatch.setattr(hubeau, "session", S)
+    d = hubeau.fetch_series("QIXnJ", date(2023, 11, 14), date(2023, 11, 15))
+    assert d["value_m3s"].tolist() == [800.0, 1200.0]
+    assert d.index[1] == pd.Timestamp("2023-11-15")
