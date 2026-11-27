@@ -14,8 +14,11 @@ FORECAST (probabilistic): current state + GEFS days 1–7, per ensemble member:
   orange  P_warning ≥ 50 % or P_gr4j ≥ 50 %
   red     P_alert ≥ 50 % or (P_warning ≥ 70 % and P_gr4j ≥ 50 %)
 
-OUTLOOK (16 days, used to LIFT a watch, not to raise alerts):
-  very unlikely  P(any watch, days 1–16) ≤ 10 % and P_gr4j ≤ 5 %  → a hard yellow becomes green
+OUTLOOK (used to LIFT a watch, not to raise alerts):
+  very unlikely  P(watch, days 1–3) ≤ 10 % and P(watch, days 4–7) ≤ 10 % → a hard yellow becomes green
+                 ("no flood conditions in the next 7 days")
+  Days 8–16 are shown as a trend only: in the 2015/2023 hindcasts GEFS showed ≤ 10 % at 10–16 days
+  before both floods, so it cannot give an all-clear that far ahead.
   (orange/red are never lifted by a forecast: they are confirmed by observed flow)
 """
 import pandas as pd
@@ -50,11 +53,16 @@ def forecast_level(p_watch: float, p_warning: float, p_alert: float, p_gr4j: flo
     return 0
 
 
-OUTLOOK = {"p_watch": 0.10, "p_gr4j": 0.05}
+OUTLOOK = {"p_watch": 0.10}
 
 
-def outlook(p_watch_any: float, p_gr4j: float) -> str:
-    return "very unlikely" if p_watch_any <= OUTLOOK["p_watch"] and p_gr4j <= OUTLOOK["p_gr4j"] else "possible"
+def outlook(p_watch_d1_3: float, p_watch_d4_7: float) -> str:
+    """All-clear for the next 7 days only (days 8–16 have no all-clear skill)."""
+    return "very unlikely" if max(p_watch_d1_3, p_watch_d4_7) <= OUTLOOK["p_watch"] else "possible"
+
+
+def trend(p_watch_d8_16: float) -> str:
+    return "signal" if p_watch_d8_16 >= 0.3 else "quiet"
 
 
 def final(hard_level: int, outlook_: str) -> int:
@@ -69,6 +77,7 @@ def forecast(conditions: pd.DataFrame, gr4j: pd.DataFrame) -> pd.DataFrame:
     m = c.merge(g, on=["event", "init"])
     m["forecast"] = [forecast_level(*r) for r in m[["P_watch", "P_warning", "P_alert", "prob_flood"]].to_numpy()]
     m["color"] = m["forecast"].map(COLORS)
-    m["outlook"] = [outlook(p, g) for p, g in m[["P_watch", "prob_flood"]].to_numpy()]
+    m["outlook_7d"] = [outlook(a, b) for a, b in m[["P_watch_d1_3", "P_watch_d4_7"]].to_numpy()]
+    m["trend_8_16"] = m["P_watch_d8_16"].map(trend)
     wins = [c for c in m.columns if c.startswith("P_watch_d")]
-    return m[["event", "init", "days_before_peak", *wins, "P_warning", "P_alert", "prob_flood", "forecast", "color", "outlook"]]
+    return m[["event", "init", "days_before_peak", *wins, "P_warning", "P_alert", "prob_flood", "forecast", "color", "outlook_7d", "trend_8_16"]]
