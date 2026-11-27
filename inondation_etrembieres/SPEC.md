@@ -41,7 +41,8 @@ These events are used to **validate** the model (did it predict a high probabili
    - **Main:** **LSTM** (NeuralHydrology), daily inputs from all points, 365-day lookback to capture snow storage and soil memory.
    - Not tree models (LightGBM/RF) for the peak: they cannot predict above the highest training value, and 2023 was a record.
 5. **Forecast probability:** run the model on every member of the **ensemble weather forecast** (Open-Meteo Ensemble API). Probability = the share of members whose predicted discharge is ≥ the 2015 threshold (plus the model's own error spread).
-6. **Validation:** time-based split (no random shuffle); report the error on high flows (> Q95), the Brier score for ≥ threshold, and a hindcast of Nov 2023 and 2015.
+6. **Hindcast (forecast skill):** NOAA GEFS past ensembles (public AWS: reforecast 2000–2019, 5 members; operational archive 2017→, 31 members). For inits 1–7 days before each peak: ERA5 history up to init−1 + GEFS days 1–7 → GR4J → P(flood) = share of members above the model's quantile-mapped threshold (`hindcast.py`).
+7. **Validation:** time-based split (no random shuffle); report the error on high flows (> Q95), the Brier score for ≥ threshold, and a hindcast of Nov 2023 and 2015.
 
 > **Best practice:**
 > - Only 2 events reach the 2015 level in the record, which is too few to train a classifier. So the model predicts discharge (regression), weighting high flows more, and the probability comes from the threshold.

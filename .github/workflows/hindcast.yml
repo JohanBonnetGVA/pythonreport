@@ -1,0 +1,57 @@
+name: hindcast
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/inondation-etrembieres-project-**"]
+    paths:
+      - "inondation_etrembieres/src/inondation_etrembieres/sources/gefs.py"
+      - "inondation_etrembieres/src/inondation_etrembieres/hindcast.py"
+      - ".github/workflows/hindcast.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hindcast-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  hindcast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: inondation_etrembieres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev,gefs]"
+      - run: pytest -q
+      - name: Fetch GEFS past forecasts (cached per init date)
+        run: inondation-fetch gefs
+      - if: always()
+        name: Commit GEFS cache
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
+          git add -f data/raw/gefs/*.parquet 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m "Update GEFS hindcast data [skip ci]"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+      - name: Hindcast
+        run: |
+          inondation-fetch db
+          inondation-fetch hindcast | tee hindcast.txt
+          { echo '```'; cat hindcast.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hindcast
+          path: |
+            inondation_etrembieres/data/processed/hindcast.csv
+            inondation_etrembieres/data/raw/gefs/

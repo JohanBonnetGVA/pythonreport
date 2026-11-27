@@ -93,3 +93,38 @@ def test_hubeau_parse(monkeypatch):
     d = hubeau.fetch_series("QIXnJ", date(2023, 11, 14), date(2023, 11, 15))
     assert d["value_m3s"].tolist() == [800.0, 1200.0]
     assert d.index[1] == pd.Timestamp("2023-11-15")
+
+
+def test_gefs_daily_from_buckets():
+    from datetime import date
+    from inondation_etrembieres.sources import gefs
+    rows = []
+    for s, e, v in [(0, 3, 1.0), (0, 6, 3.0), (6, 9, 2.0), (6, 12, 2.5), (12, 18, 1.0), (18, 24, 1.0), (24, 30, 4.0)]:
+        rows.append(dict(member="c00", var="precip", start_h=s, end_h=e, point="flaine", value=v))
+    for h, k in [(6, 273.15), (12, 275.15), (30, 280.15)]:
+        rows.append(dict(member="c00", var="temp", start_h=h, end_h=h, point="flaine", value=k))
+    rows.append(dict(member="c00", var="z", start_h=0, end_h=0, point="flaine", value=1500.0))
+    d = gefs._to_daily(pd.DataFrame(rows), date(2023, 11, 10)).set_index("date")
+    assert d.loc["2023-11-10", "precip_mm"] == 3.0 + 2.5 + 1.0 + 1.0
+    assert d.loc["2023-11-11", "precip_mm"] == 4.0
+    assert abs(d.loc["2023-11-10", "temp_c"] - 1.0) < 1e-9 and d["z_grid"].iloc[0] == 1500.0
+
+
+def test_gefs_idx_ranges():
+    from inondation_etrembieres.sources import gefs
+    idx = "1:0:d=2023111000:HGT:surface:anl:ENS=low-res ctl\n2:100:d=2023111000:TMP:2 m above ground:6 hour fcst:\n3:250:d=2023111000:RH:2 m above ground:6 hour fcst:\n4:400:d=2023111000:APCP:surface:0-6 hour acc fcst:\n"
+    assert gefs._ranges(idx) == [(0, 99), (100, 249), (400, None)]
+
+
+def test_hindcast_scenario_splits_snow():
+    from inondation_etrembieres.hindcast import scenario
+    from inondation_etrembieres.dataset import Dataset
+    idx = pd.date_range("2023-11-01", periods=9, freq="D", name="time")
+    cols = pd.MultiIndex.from_product([["flaine"], ["precipitation_sum", "rain_sum", "temperature_2m_mean"]])
+    hist = Dataset(weather=pd.DataFrame(1.0, index=idx, columns=cols), y=pd.Series(1.0, index=idx))
+    fc = pd.DataFrame({"member": "c00", "point": "flaine", "date": pd.to_datetime(["2023-11-10", "2023-11-11"]),
+                       "precip_mm": [10.0, 10.0], "temp_c": [5.0, -5.0], "z_grid": [1600.0, 1600.0]})
+    d = scenario(hist, fc, "c00", pd.Timestamp("2023-11-10"))
+    assert d.weather.index[-1] == pd.Timestamp("2023-11-11")
+    assert d.weather.loc["2023-11-10", ("flaine", "rain_sum")] == 10.0   # 5 °C → rain
+    assert d.weather.loc["2023-11-11", ("flaine", "rain_sum")] == 0.0    # −5 °C → snow
