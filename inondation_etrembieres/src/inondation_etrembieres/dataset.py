@@ -46,10 +46,10 @@ def oudin_pet(temp: pd.Series, lat_deg: float) -> pd.Series:
     return pd.Series(np.where(temp.to_numpy() + 5 > 0, pet, 0.0), index=temp.index)
 
 
-def load(target: str = "discharge_max") -> Dataset:
+def load(target: str = "discharge_max", station: str = config.TARGET_STATION) -> Dataset:
     """Load from the DuckDB store."""
     w = store.query("SELECT * FROM weather_daily ORDER BY time")
     w = w.pivot(index="time", columns="point").swaplevel(axis=1).sort_index(axis=1)
     q = store.query("SELECT time, %s AS q FROM discharge_daily WHERE station = $s ORDER BY time" % target,
-                    s=config.DISCHARGE_STATION).set_index("time")["q"]
+                    s=station).set_index("time")["q"]
     return Dataset(weather=w, y=q.reindex(w.index))

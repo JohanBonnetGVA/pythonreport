@@ -66,8 +66,9 @@ class ModelManager:
         self.sims.insert(0, "observed", self.data.y)
         return self.sims
 
-    def compare(self, threshold: float = config.FLOOD_THRESHOLD_M3S) -> pd.DataFrame:
+    def compare(self, threshold: float | None = None) -> pd.DataFrame:
         """One row per model: NSE/KGE per period + peak scores per flood event."""
+        threshold = threshold or config.flood_threshold(self.data.y)
         rows = []
         for n in self.models:
             r = {"model": n}

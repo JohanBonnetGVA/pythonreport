@@ -9,7 +9,7 @@ on:
       - "inondation_etrembieres/src/inondation_etrembieres/manager.py"
       - "inondation_etrembieres/src/inondation_etrembieres/dataset.py"
       - "inondation_etrembieres/src/inondation_etrembieres/metrics.py"
-      - "inondation_etrembieres/data/raw/discharge/*.csv"
+      - "inondation_etrembieres/data/raw/discharge/**"
       - ".github/workflows/models.yml"
 
 permissions:
@@ -38,14 +38,14 @@ jobs:
       - name: Check data
         id: data
         run: |
-          if ls data/raw/discharge/*2170*.csv >/dev/null 2>&1 && ls data/raw/weather/*.parquet >/dev/null 2>&1; then
+          if ls data/raw/discharge/V022000202_daily.parquet >/dev/null 2>&1 && ls data/raw/weather/*.parquet >/dev/null 2>&1; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::Missing discharge CSV (data/raw/discharge/*2170*.csv) or weather parquet — skipping model comparison."
+            echo "::warning::Missing Reignier discharge (data/raw/discharge/V022000202_daily.parquet) or weather parquet — skipping model comparison."
           fi
       - if: steps.data.outputs.ready == 'true'
         run: |
-          inondation-fetch discharge
+          if ls data/raw/discharge/*2170*.csv >/dev/null 2>&1; then inondation-fetch discharge; fi
           inondation-fetch db
           inondation-fetch models | tee comparison.txt
           { echo '```'; cat comparison.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

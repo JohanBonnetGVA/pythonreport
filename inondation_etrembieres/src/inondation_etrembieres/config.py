@@ -12,8 +12,23 @@ END = date.today()
 TIMEZONE = "Europe/Zurich"
 
 # BAFU gauge, just downstream of Étrembières.
-DISCHARGE_STATION = "2170"  # Arve – Genève, Bout du Monde
-FLOOD_THRESHOLD_M3S = 905.0  # 2015 peak
+# Target: Reignier-Ésery (Hub'Eau), just upstream of Étrembières. Geneva (BAFU 2170) is
+# downstream of the Étrembières flood plain, whose storage attenuates the peak (2023:
+# ~1200 m³/s at Reignier vs ~1010 at Geneva), so Geneva under-states the local flood.
+TARGET_STATION = "V022000202"  # L'Arve à Reignier-Ésery
+DISCHARGE_STATION = "2170"     # BAFU Arve – Genève, Bout du Monde (secondary / cross-check)
+FLOOD_EVENT_2015 = ("2015-04-25", "2015-05-10")
+FLOOD_THRESHOLD_M3S: float | None = None  # None → 2015 peak at TARGET_STATION, from data
+
+
+def flood_threshold(q_max) -> float:
+    """Flood threshold = 2015 daily peak at the target station (unless set explicitly)."""
+    if FLOOD_THRESHOLD_M3S is not None:
+        return FLOOD_THRESHOLD_M3S
+    peak = q_max.loc[FLOOD_EVENT_2015[0]: FLOOD_EVENT_2015[1]].max()
+    if peak != peak:  # NaN
+        raise ValueError("No 2015 data at target station to set the flood threshold")
+    return float(peak)
 
 
 @dataclass(frozen=True)
