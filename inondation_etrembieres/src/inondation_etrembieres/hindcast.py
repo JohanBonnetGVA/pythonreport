@@ -13,6 +13,7 @@ import pandas as pd
 from . import config
 from .dataset import Dataset, load
 from .manager import ModelManager
+from .peak import PeakFactor
 from .sources import gefs
 
 log = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ def run(names=("gr4j_snow",), temp: str = "gefs") -> pd.DataFrame:
     mm = ModelManager(data, names=names)
     mm.run()
     thr_obs = config.flood_threshold(data.y)
+    pf = PeakFactor().fit(data.y.loc[:"2022"], data.qmax.loc[:"2022"]) if data.qmax is not None else None
     rows = []
     for n, model in mm.models.items():
         thr = mm._relative_flood(n, thr_obs)["qmap threshold"]
@@ -62,16 +64,20 @@ def run(names=("gr4j_snow",), temp: str = "gefs") -> pd.DataFrame:
             for init in gefs.init_dates(peak):
                 fc = gefs.fetch(init)
                 t0 = pd.Timestamp(init)
-                peaks = {}
+                peaks, pmax = {}, {}
                 for m in sorted(fc["member"].unique()):
                     q = model.predict(scenario(data, fc, m, t0, temp)).loc[t0: t0 + pd.Timedelta(days=gefs.LEAD_DAYS - 1)]
                     peaks[m] = q.max()
+                    if pf is not None:
+                        pmax[m] = pf.predict(q).max()
                 pk = pd.Series(peaks)
                 rows.append({
                     "model": n, "temp": temp, "event": ev, "init": init, "days_before_peak": (pd.Timestamp(peak) - t0).days,
                     "members": len(pk), "prob_flood": float((pk >= thr).mean()),
                     "peak_q_p10": pk.quantile(0.1), "peak_q_median": pk.median(), "peak_q_p90": pk.quantile(0.9),
                     "model_threshold": thr, "obs_peak": float(data.y.loc[peak]),
+                    "daily_max_median": pd.Series(pmax).median() if pmax else np.nan,
+                    "obs_daily_max": float(data.qmax.loc[peak]) if data.qmax is not None else np.nan,
                     "gefs_basin_precip_mm": float(fc.groupby(["member", "point"])["precip_mm"].sum().mean()),
                 })
                 log.info("  %s init %s (D-%d): P(flood)=%.0f%%", ev, init, rows[-1]["days_before_peak"],

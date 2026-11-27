@@ -82,6 +82,7 @@ class ModelManager:
                 for k, v in metrics.event(self.data.y.loc[a:b], self.sims[n].loc[a:b], threshold).items():
                     r[f"{ev} {k}"] = v
             r.update(self._relative_flood(n, threshold))
+            r.update(self._daily_max(n))
             rows.append(r)
         return pd.DataFrame(rows).set_index("model").sort_values("kge_test", ascending=False)
 
@@ -104,6 +105,18 @@ class ModelManager:
             "qmap threshold": thr_q, "qmap flood_2015": bool(p15 >= thr_q), "qmap flood_2023": bool(p23 >= thr_q),
             "qmap false_alarm_days_test": int(((sim.loc[te] >= thr_q) & (obs.loc[te] < threshold)).sum()),
         }
+
+    def _daily_max(self, n: str) -> dict:
+        """2023 daily peak (QIXnJ) from the simulated daily mean via the peak factor (fit 2019–2022)."""
+        from .peak import PeakFactor
+        qmax = self.data.qmax
+        if qmax is None or qmax.loc["2023-11"].dropna().empty:
+            return {}
+        pf = PeakFactor().fit(self.data.y.loc[:"2022"], qmax.loc[:"2022"])
+        a, b = EVENTS["2023 (test)"]
+        o, s = qmax.loc[a:b].max(), pf.predict(self.sims[n]).loc[a:b].max()
+        return {"2023 (test) daily_max_obs": o, "2023 (test) daily_max_sim": s,
+                "2023 (test) daily_max_err_pct": 100 * (s - o) / o}
 
     def save(self) -> None:
         out = config.DATA_PROCESSED

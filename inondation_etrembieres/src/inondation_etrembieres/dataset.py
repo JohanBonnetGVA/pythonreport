@@ -18,6 +18,7 @@ class Dataset:
     weather: pd.DataFrame  # columns MultiIndex (point, variable), daily index
     y: pd.Series           # daily discharge (m³/s)
     lat: float = 46.0
+    qmax: pd.Series | None = None  # observed daily max (shorter record), for the peak factor
 
     def features(self) -> pd.DataFrame:
         """Flat feature table: <point>__<variable>."""
@@ -52,4 +53,9 @@ def load(target: str = config.TARGET, station: str = config.TARGET_STATION) -> D
     w = w.pivot(index="time", columns="point").swaplevel(axis=1).sort_index(axis=1)
     q = store.query("SELECT time, %s AS q FROM discharge_daily WHERE station = $s ORDER BY time" % target,
                     s=station).set_index("time")["q"]
-    return Dataset(weather=w, y=q.reindex(w.index))
+    d = Dataset(weather=w, y=q.reindex(w.index))
+    if target != "discharge_max":  # keep the (shorter) daily-max series for the peak factor
+        qmax = store.query("SELECT time, discharge_max AS q FROM discharge_daily WHERE station = $s ORDER BY time",
+                           s=station).set_index("time")["q"]
+        d.qmax = qmax.reindex(w.index)
+    return d

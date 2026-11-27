@@ -49,3 +49,14 @@ def test_lstm_runs():
     m = LSTM(hidden=8, epochs=2)
     m.fit(d, d.y.loc[:"2015"].index, d.y.loc["2016"].index)
     assert m.predict(d).loc["2016"].notna().all()
+
+
+def test_peak_factor_grows_with_rise():
+    from inondation_etrembieres.peak import PeakFactor
+    idx = pd.date_range("2020-01-01", periods=400, freq="D")
+    rng = np.random.default_rng(1)
+    mean = pd.Series(50 * np.exp(rng.normal(0, 0.5, 400)), index=idx)
+    rise = (mean / mean.shift(1)).fillna(1)
+    qmax = mean * 1.2 * rise.clip(lower=1) ** 0.3
+    pf = PeakFactor().fit(mean, qmax)
+    assert pf.coef[2] > 0 and (pf.predict(mean) >= mean).all()
