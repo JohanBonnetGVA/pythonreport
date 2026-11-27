@@ -15,10 +15,11 @@ TIMEZONE = "Europe/Zurich"
 # Target: Reignier-Ésery (Hub'Eau), just upstream of Étrembières. Geneva (BAFU 2170) is
 # downstream of the Étrembières flood plain, whose storage attenuates the peak (2023:
 # ~1200 m³/s at Reignier vs ~1010 at Geneva), so Geneva under-states the local flood.
-TARGET_STATION = "V022000202"  # L'Arve à Reignier-Ésery
+TARGET_STATION = "V0220002"   # Hub'Eau site L'Arve à Reignier-Ésery (daily mean since 1990)
 DISCHARGE_STATION = "2170"     # BAFU Arve – Genève, Bout du Monde (secondary / cross-check)
 FLOOD_EVENT_2015 = ("2015-04-25", "2015-05-10")
-FLOOD_THRESHOLD_M3S: float | None = None  # None → 2015 peak at TARGET_STATION, from data
+TARGET = "discharge_mean"  # daily mean: complete since 1990 (daily max only since 2019)
+FLOOD_THRESHOLD_M3S: float | None = None  # None → 2015 peak at TARGET_STATION (717 m³/s daily mean)
 
 
 def flood_threshold(q_max) -> float:

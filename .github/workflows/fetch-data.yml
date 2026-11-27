@@ -48,7 +48,7 @@ jobs:
               print(f"### {f.stem} ({len(d)} days, {d.index.min():%Y-%m-%d} → {d.index.max():%Y-%m-%d})")
               for a, b in (("2015-04-25", "2015-05-03"), ("2023-11-01", "2023-11-16")):
                   print(d.loc[a:b, cols].round(3).to_markdown(), "\n")
-          q = pathlib.Path("data/raw/discharge/V022000202_daily.parquet")
+          q = pathlib.Path("data/raw/discharge/V0220002_daily.parquet")
           if q.exists():
               d = pd.read_parquet(q)
               print(f"### Reignier-Ésery ({len(d)} days, {d.index.min():%Y-%m-%d} → {d.index.max():%Y-%m-%d})")

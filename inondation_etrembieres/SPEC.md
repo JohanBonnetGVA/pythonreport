@@ -17,7 +17,7 @@ The model is trained on past data, including the reference floods of **November 
 | Snow cover / snow depth, snowmelt | rain-on-snow, melt contribution | Open-Meteo (ERA5-Land) |
 | Soil moisture (0–7 cm, 7–28 cm) | catchment saturation | Open-Meteo (ERA5-Land) |
 | Temperature (0 °C isotherm proxy) | rain vs snow | Open-Meteo |
-| River discharge (m³/s) | **target** | Hub'Eau **V022000202 Arve à Reignier-Ésery** (FR, just upstream of Étrembières) |
+| River discharge (m³/s) | **target** | Hub'Eau site **V0220002 Arve à Reignier-Ésery** (FR, just upstream of Étrembières): daily mean 1990→ (EDF station V022000201), daily max 2019→ (DREAL V022000202) |
 | River discharge (m³/s) | cross-check | BAFU **2170 Arve – Genève Bout du Monde** (CH, since 1904, downstream; peak attenuated by the Étrembières flood plain) |
 
 Catchment variables are taken as a **basin average** over the upper Arve (Chamonix → Étrembières), not just at the town.
@@ -31,9 +31,9 @@ Catchment variables are taken as a **basin average** over the upper Arve (Chamon
 These events are used to **validate** the model (did it predict a high probability?). Two events are not enough to train on by themselves.
 
 ## 5. Modelling approach
-1. **Flood threshold:** the **2015 daily peak at Reignier-Ésery** (set from data; Geneva equivalent ~905 m³/s). Flood = daily peak at Reignier ≥ that threshold.
+1. **Flood threshold:** **717 m³/s daily mean at Reignier-Ésery** (2 May 2015; Geneva equivalent ~905 m³/s instantaneous). Flood = daily mean ≥ 717 m³/s. Only 2015 (717) and 2023 (743) reach it since 1990; next highest is 2022 (454).
+   **Target:** daily mean discharge (complete since 1990; daily max only since 2019), predicted as a **regression**, then compared to the threshold.
    **Why Reignier:** the Étrembières flood plain stores water and lowers the peak at Geneva (2023: ~1200 vs ~1010 m³/s), so Geneva under-states the local flood.
-   **Target:** daily peak discharge (m³/s), predicted as a **regression**, then compared to the threshold.
 2. **Training data:** full daily history (≥ 20 years, ERA5 + gauge), not only the 2 events.
 3. **Features:** cumulative precipitation over 1/3/5 days, snow depth change, soil moisture, temperature, previous-day discharge.
 4. **Model (discharge regression):**

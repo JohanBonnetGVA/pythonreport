@@ -25,7 +25,7 @@ def main() -> None:
                 log.error("Open-Meteo quota reached (%s); re-run later to resume.", e)
                 raise SystemExit(2)
     if a.source in ("hubeau", "all"):
-        log.info("hubeau %s", hubeau.STATION)
+        log.info("hubeau %s", hubeau.SITE)
         hubeau.fetch(a.start, a.end)
     if a.source in ("discharge", "all"):
         log.info("discharge %s", config.DISCHARGE_STATION)

@@ -14,8 +14,9 @@ from ..config import DATA_RAW
 from ._http import session
 
 BASE = "https://hubeau.eaufrance.fr/api/v2/hydrometrie"
-STATION = "V022000202"  # L'Arve à Reignier-Ésery (current station, data from 2019)
-SITE = "V0220002"       # hydrometric site: may hold older stations with pre-2019 history
+SITE = "V0220002"        # L'Arve à Reignier-Ésery [Arthaz]
+PRIMARY = "V022000201"   # EDF, open 1961: complete daily mean since 1990 → wins on overlap
+STATION = "V022000202"   # DREAL, open 2019: only source of daily max (QIXnJ)
 SERIES = {"QmnJ": "discharge_mean", "QIXnJ": "discharge_max"}
 log = logging.getLogger(__name__)
 
@@ -61,10 +62,11 @@ def fetch_series(grandeur: str, start: date, end: date, code: str = STATION) -> 
     return out.sort_index()
 
 
-def fetch(start: date, end: date, code: str = STATION, site: str = SITE) -> pd.DataFrame:
-    """Daily mean + max (m³/s), all stations of the site merged (current station wins on overlap).
+def fetch(start: date, end: date, code: str = PRIMARY, site: str = SITE) -> pd.DataFrame:
+    """Daily mean + max (m³/s), all stations of the site merged.
 
-    Same schema as BAFU daily → data/raw/discharge/<code>_daily.parquet.
+    `code` wins on overlap (one consistent rating for the long daily-mean series);
+    other stations only fill gaps (e.g. daily max from 2019). → data/raw/discharge/<site>_daily.parquet.
     """
     try:
         stations = site_stations(site)
@@ -75,7 +77,7 @@ def fetch(start: date, end: date, code: str = STATION, site: str = SITE) -> pd.D
     for st in stations:
         log.info("site %s station %s: %s, open %s → %s", site, st.get("code_station"), st.get("libelle_station"),
                  st.get("date_ouverture_station"), st.get("date_fermeture_station"))
-    codes = sorted(set(codes), key=lambda c: c == code)  # current station last → wins
+    codes = sorted(set(codes), key=lambda c: c == code)  # primary last → wins
     merged: dict[str, pd.Series] = {}
     for c in codes:
         parts = {}
@@ -96,9 +98,9 @@ def fetch(start: date, end: date, code: str = STATION, site: str = SITE) -> pd.D
     if not merged:
         raise ValueError(f"Hub'Eau: no data for site {site}")
     d = pd.DataFrame(merged).sort_index()
-    out = DATA_RAW / "discharge" / f"{code}_daily.parquet"
+    out = DATA_RAW / "discharge" / f"{site}_daily.parquet"
     out.parent.mkdir(parents=True, exist_ok=True)
     d.to_parquet(out)
-    log.info("%s: %d days %s → %s, max %.0f m³/s on %s", code, len(d), d.index.min().date(),
-             d.index.max().date(), d["discharge_max"].max(), d["discharge_max"].idxmax().date())
+    log.info("%s: %d days %s → %s, max daily mean %.0f m³/s on %s", site, len(d), d.index.min().date(),
+             d.index.max().date(), d["discharge_mean"].max(), d["discharge_mean"].idxmax().date())
     return d
