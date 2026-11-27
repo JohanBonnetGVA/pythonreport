@@ -60,3 +60,10 @@ def test_peak_factor_grows_with_rise():
     qmax = mean * 1.2 * rise.clip(lower=1) ** 0.3
     pf = PeakFactor().fit(mean, qmax)
     assert pf.coef[2] > 0 and (pf.predict(mean) >= mean).all()
+
+
+def test_condition_levels():
+    from inondation_etrembieres import conditions as C
+    z = pd.DataFrame({"rain_3d": [1.0, 3.0, 4.5, 6.0, 6.0], "wetness": [1, 1, 1, 1, 0.0],
+                      "snow": 0.0, "warming": 0.0, "rain_on_snow": [1, 1, 1, 1, 1.0]})
+    assert C.level(z).tolist() == [0, 1, 2, 3, 0]  # last: dry catchment → no flood conditions

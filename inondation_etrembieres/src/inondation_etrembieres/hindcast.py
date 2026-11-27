@@ -86,3 +86,21 @@ def run(names=("gr4j_snow",), temp: str = "gefs") -> pd.DataFrame:
     config.DATA_PROCESSED.mkdir(parents=True, exist_ok=True)
     out.to_csv(config.DATA_PROCESSED / f"hindcast_{temp}.csv", index=False)
     return out
+
+
+def run_conditions() -> pd.DataFrame:
+    """Flood-condition levels (σ indicators) from GEFS, per init: share of members at each level."""
+    from . import conditions as C
+    data = load()
+    clim = C.climatology(C.indicators(data.weather))
+    rows = []
+    for ev, peak in EVENTS.items():
+        for init in gefs.init_dates(peak):
+            r = C.forecast(data, gefs.fetch(init), pd.Timestamp(init), clim)
+            rows.append({"event": ev, "init": init, "days_before_peak": (pd.Timestamp(peak) - pd.Timestamp(init)).days,
+                         "members": len(r),
+                         **{f"P_{C.LEVELS[k].split()[0]}": (r["level"] >= k).mean() for k in C.LEVELS},
+                         **{f"median_max_{c}": r[f"max_{c}"].median() for c in ("rain_3d", "wetness", "snow", "warming", "rain_on_snow")}})
+    out = pd.DataFrame(rows)
+    out.to_csv(config.DATA_PROCESSED / "hindcast_conditions.csv", index=False)
+    return out

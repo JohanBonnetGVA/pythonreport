@@ -10,7 +10,7 @@ log = logging.getLogger(__name__)
 
 def main() -> None:
     p = argparse.ArgumentParser(prog="inondation-fetch")
-    p.add_argument("source", choices=("weather", "discharge", "hubeau", "db", "all", "models", "gefs", "hindcast"))
+    p.add_argument("source", choices=("weather", "discharge", "hubeau", "db", "all", "models", "gefs", "hindcast", "conditions"))
     p.add_argument("--start", type=lambda s: config.date.fromisoformat(s), default=config.START)
     p.add_argument("--end", type=lambda s: config.date.fromisoformat(s), default=config.END)
     p.add_argument("--temp", choices=("gefs", "era5"), default="gefs", help="hindcast: forecast or observed temperature")
@@ -43,6 +43,9 @@ def main() -> None:
     if a.source == "hindcast":
         from .hindcast import run
         print(run(temp=a.temp).round(2).to_string(index=False))
+    if a.source == "conditions":
+        from .hindcast import run_conditions
+        print(run_conditions().round(2).to_string(index=False))
     if a.source == "models":
         from .dataset import load
         from .manager import ModelManager
