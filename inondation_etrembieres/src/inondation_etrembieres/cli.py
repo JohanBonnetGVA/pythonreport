@@ -13,6 +13,7 @@ def main() -> None:
     p.add_argument("source", choices=("weather", "discharge", "hubeau", "db", "all", "models", "gefs", "hindcast"))
     p.add_argument("--start", type=lambda s: config.date.fromisoformat(s), default=config.START)
     p.add_argument("--end", type=lambda s: config.date.fromisoformat(s), default=config.END)
+    p.add_argument("--temp", choices=("gefs", "era5"), default="gefs", help="hindcast: forecast or observed temperature")
     a = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -41,7 +42,7 @@ def main() -> None:
                 gefs.fetch(d)
     if a.source == "hindcast":
         from .hindcast import run
-        print(run().round(2).to_string(index=False))
+        print(run(temp=a.temp).round(2).to_string(index=False))
     if a.source == "models":
         from .dataset import load
         from .manager import ModelManager

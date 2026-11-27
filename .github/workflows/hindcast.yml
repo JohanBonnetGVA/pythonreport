@@ -46,12 +46,12 @@ jobs:
       - name: Hindcast
         run: |
           inondation-fetch db
-          inondation-fetch hindcast | tee hindcast.txt
+          { inondation-fetch hindcast --temp gefs; inondation-fetch hindcast --temp era5; } | tee hindcast.txt
           { echo '```'; cat hindcast.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: hindcast
           path: |
-            inondation_etrembieres/data/processed/hindcast.csv
+            inondation_etrembieres/data/processed/hindcast_*.csv
             inondation_etrembieres/data/raw/gefs/

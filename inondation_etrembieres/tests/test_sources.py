@@ -128,3 +128,16 @@ def test_hindcast_scenario_splits_snow():
     assert d.weather.index[-1] == pd.Timestamp("2023-11-11")
     assert d.weather.loc["2023-11-10", ("flaine", "rain_sum")] == 10.0   # 5 °C → rain
     assert d.weather.loc["2023-11-11", ("flaine", "rain_sum")] == 0.0    # −5 °C → snow
+
+
+def test_hindcast_scenario_observed_temperature():
+    from inondation_etrembieres.hindcast import scenario
+    from inondation_etrembieres.dataset import Dataset
+    idx = pd.date_range("2023-11-01", periods=12, freq="D", name="time")
+    cols = pd.MultiIndex.from_product([["flaine"], ["precipitation_sum", "rain_sum", "temperature_2m_mean"]])
+    hist = Dataset(weather=pd.DataFrame(-5.0, index=idx, columns=cols), y=pd.Series(1.0, index=idx))
+    fc = pd.DataFrame({"member": "c00", "point": "flaine", "date": pd.to_datetime(["2023-11-10"]),
+                       "precip_mm": [10.0], "temp_c": [5.0], "z_grid": [1600.0]})
+    d = scenario(hist, fc, "c00", pd.Timestamp("2023-11-10"), temp="era5")
+    assert d.weather.loc["2023-11-10", ("flaine", "temperature_2m_mean")] == -5.0
+    assert d.weather.loc["2023-11-10", ("flaine", "rain_sum")] == 0.0  # observed −5 °C → snow

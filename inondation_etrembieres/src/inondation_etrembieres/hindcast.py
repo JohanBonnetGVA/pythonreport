@@ -21,8 +21,12 @@ LAPSE = 0.0065       # °C/m, GEFS grid elevation → point elevation
 RAIN_SNOW = (0.0, 2.0)  # °C: all snow below, all rain above, linear in between
 
 
-def scenario(hist: Dataset, fc: pd.DataFrame, member: str, init: pd.Timestamp) -> Dataset:
-    """ERA5 up to init−1, then one GEFS member for days 1–7."""
+def scenario(hist: Dataset, fc: pd.DataFrame, member: str, init: pd.Timestamp, temp: str = "gefs") -> Dataset:
+    """ERA5 up to init−1, then one GEFS member for days 1–7.
+
+    temp="era5": replace the forecast temperature by the observed (ERA5) one — a
+    "perfect temperature forecast" experiment isolating the temperature error.
+    """
     w = hist.weather.loc[: init - pd.Timedelta(days=1)]
     f = fc[fc["member"] == member]
     elev = {p.name: p.elevation for p in config.POINTS}
@@ -32,6 +36,11 @@ def scenario(hist: Dataset, fc: pd.DataFrame, member: str, init: pd.Timestamp) -
         dz = elev[p] - g["z_grid"].fillna(elev[p])
         t = g["temp_c"] - LAPSE * dz
         liquid = ((t - RAIN_SNOW[0]) / (RAIN_SNOW[1] - RAIN_SNOW[0])).clip(0, 1)
+        if temp == "era5":  # observed temperature + observed rain/snow phase (as in calibration)
+            w_obs = hist.weather.reindex(g.index)
+            t = w_obs[(p, "temperature_2m_mean")]
+            frac = w_obs[(p, "rain_sum")] / w_obs[(p, "precipitation_sum")].where(lambda x: x > 0.1)
+            liquid = frac.clip(0, 1).fillna(((t - RAIN_SNOW[0]) / (RAIN_SNOW[1] - RAIN_SNOW[0])).clip(0, 1))
         cols[(p, "precipitation_sum")] = g["precip_mm"]
         cols[(p, "rain_sum")] = g["precip_mm"] * liquid
         cols[(p, "temperature_2m_mean")] = t
@@ -40,7 +49,7 @@ def scenario(hist: Dataset, fc: pd.DataFrame, member: str, init: pd.Timestamp) -
     return Dataset(weather=weather, y=hist.y.reindex(weather.index), lat=hist.lat)
 
 
-def run(names=("gr4j_snow",)) -> pd.DataFrame:
+def run(names=("gr4j_snow",), temp: str = "gefs") -> pd.DataFrame:
     data = load()
     mm = ModelManager(data, names=names)
     mm.run()
@@ -55,11 +64,11 @@ def run(names=("gr4j_snow",)) -> pd.DataFrame:
                 t0 = pd.Timestamp(init)
                 peaks = {}
                 for m in sorted(fc["member"].unique()):
-                    q = model.predict(scenario(data, fc, m, t0)).loc[t0: t0 + pd.Timedelta(days=gefs.LEAD_DAYS - 1)]
+                    q = model.predict(scenario(data, fc, m, t0, temp)).loc[t0: t0 + pd.Timedelta(days=gefs.LEAD_DAYS - 1)]
                     peaks[m] = q.max()
                 pk = pd.Series(peaks)
                 rows.append({
-                    "model": n, "event": ev, "init": init, "days_before_peak": (pd.Timestamp(peak) - t0).days,
+                    "model": n, "temp": temp, "event": ev, "init": init, "days_before_peak": (pd.Timestamp(peak) - t0).days,
                     "members": len(pk), "prob_flood": float((pk >= thr).mean()),
                     "peak_q_p10": pk.quantile(0.1), "peak_q_median": pk.median(), "peak_q_p90": pk.quantile(0.9),
                     "model_threshold": thr, "obs_peak": float(data.y.loc[peak]),
@@ -69,5 +78,5 @@ def run(names=("gr4j_snow",)) -> pd.DataFrame:
                          100 * rows[-1]["prob_flood"])
     out = pd.DataFrame(rows)
     config.DATA_PROCESSED.mkdir(parents=True, exist_ok=True)
-    out.to_csv(config.DATA_PROCESSED / "hindcast.csv", index=False)
+    out.to_csv(config.DATA_PROCESSED / f"hindcast_{temp}.csv", index=False)
     return out
