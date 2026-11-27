@@ -5,7 +5,7 @@
 - 2017→: **operational** archive (bucket noaa-gefs-pds), 00Z, 31 members (gec00, gep01–30),
   one GRIB2 file per lead time with a .idx → only the needed fields are byte-range fetched.
 
-Output per init date: data/raw/gefs/<YYYYMMDD>.parquet, long format
+Lead days 1–10. Output per init date: data/raw/gefs/<YYYYMMDD>.parquet, long format
 (member, date, point, precip_mm, temp_c, z_grid). Days are UTC (00Z init → day 1 = 00–24 UTC).
 """
 import logging
@@ -26,7 +26,7 @@ from ._http import session
 log = logging.getLogger(__name__)
 REFORECAST = "https://noaa-gefs-retrospective.s3.amazonaws.com"
 OPERATIONAL = "https://noaa-gefs-pds.s3.amazonaws.com"
-LEAD_DAYS = 7
+LEAD_DAYS = 10  # reforecast files hold days 1–10; operational runs go to 16
 OUT = DATA_RAW / "gefs"
 _local = threading.local()
 
@@ -185,7 +185,10 @@ def fetch(init: date) -> pd.DataFrame:
     """Daily ensemble forecast for one 00Z init date, cached to data/raw/gefs/<date>.parquet."""
     out = OUT / f"{init:%Y%m%d}.parquet"
     if out.exists():
-        return pd.read_parquet(out)
+        cached = pd.read_parquet(out)
+        if cached["date"].nunique() >= LEAD_DAYS:  # re-fetch caches made with a shorter horizon
+            return cached
+        log.info("  %s: cache has %d days < %d, re-fetching", init, cached["date"].nunique(), LEAD_DAYS)
     d = fetch_reforecast(init) if init.year <= 2019 else fetch_operational(init)
     out.parent.mkdir(parents=True, exist_ok=True)
     d.to_parquet(out)

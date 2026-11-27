@@ -83,12 +83,14 @@ def level(z: pd.DataFrame) -> pd.Series:
     return sum(flag(z, {**RULE, "rain_3d": r}).astype(int) for r in (2.0, 4.0, 5.0))
 
 
-def forecast(data, fc: pd.DataFrame, init: pd.Timestamp, clim: dict, lead_days: int = 7) -> pd.DataFrame:
+def forecast(data, fc: pd.DataFrame, init: pd.Timestamp, clim: dict, lead_days: int | None = None) -> pd.DataFrame:
     """Per member: max level and indicator z-scores over the forecast days.
 
     GEFS gives rain/temperature; snow depth is persisted from the observed state on init−1
     (GEFS has none); wetness follows the forecast rain."""
     from .hindcast import scenario
+    from .sources.gefs import LEAD_DAYS
+    lead_days = lead_days or LEAD_DAYS
     rows = []
     for m in sorted(fc["member"].unique()):
         w = scenario(data, fc, m, init).weather
