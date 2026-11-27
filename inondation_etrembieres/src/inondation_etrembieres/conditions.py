@@ -9,9 +9,10 @@ Ingredients (the 2015 and 2023 mechanisms):
                computed from precipitation, so forecast rain also wets the soil)
   snow         snow depth at snow points (≥ 1100 m)
   warming      2-day temperature rise at snow points (melt / rising rain-snow limit)
-  rain_on_snow share of snow points with snow on the ground, T > 0 °C and rain > 5 mm (0–1, not a z-score)
+  rain_on_snow share of snow points with ≥ 0.2 m snow, T > 0 °C and rain > 5 mm (0–1, not a z-score)
 
-Flood conditions = rain_3d ≥ 2σ AND wetness ≥ 0.5σ AND (rain_on_snow ≥ 0.5 OR warming ≥ 1σ).
+Flood conditions = rain_3d ≥ 2σ AND wetness ≥ 0.5σ AND (rain_on_snow ≥ 0.5 OR (warming ≥ 1σ AND snow ≥ 0.2 m)).
+z-scores are seasonal (day-of-year): +1σ warming in December is a smaller absolute rise than in May.
 """
 import numpy as np
 import pandas as pd
@@ -19,6 +20,7 @@ import pandas as pd
 from . import config
 
 SNOW_MIN_ELEV = 1100
+SNOW_MIN_DEPTH = 0.2  # m: below this a snowpack adds negligible melt water
 CLIM = ("1990-01-01", "2016-12-31")
 API_K = 0.9
 RULE = {"rain_3d": 2.0, "wetness": 0.5, "rain_on_snow": 0.5, "warming": 1.0}
@@ -32,11 +34,12 @@ def indicators(w: pd.DataFrame) -> pd.DataFrame:
     t_snow = x("temperature_2m_mean", snow_pts)
     snow = x("snow_depth_last", snow_pts)
     rain = x("rain_sum", snow_pts)
-    ros = ((snow.shift(1) > 0.05) & (t_snow > 0) & (rain > 5)).mean(axis=1)
+    ros = ((snow.shift(1) >= SNOW_MIN_DEPTH) & (t_snow > 0) & (rain > 5)).mean(axis=1)
     return pd.DataFrame({
         "rain_3d": precip.rolling(3, min_periods=1).sum(),
         "wetness": precip.shift(1).fillna(0).ewm(alpha=1 - API_K, adjust=False).mean() / (1 - API_K),
         "snow": snow.mean(axis=1),
+        "snow_m": snow.mean(axis=1),  # raw depth (not standardised): gates the warming branch
         "warming": t_snow.mean(axis=1).diff(2),
         "rain_on_snow": ros,
     })
@@ -47,7 +50,7 @@ def climatology(ind: pd.DataFrame, clim: tuple[str, str] = CLIM) -> dict[str, tu
     ref = ind.loc[clim[0]: clim[1]]
     rdoy = ref.index.day_of_year.to_numpy()
     out = {}
-    for c in ind.columns.drop("rain_on_snow"):
+    for c in ind.columns.drop(["rain_on_snow", "snow_m"]):
         v, mu, sd = ref[c].to_numpy(), np.empty(367), np.empty(367)
         for d in range(1, 367):
             win = np.abs(((rdoy - d + 183) % 366) - 183) <= 15
@@ -62,12 +65,14 @@ def zscores(ind: pd.DataFrame, clim=None) -> pd.DataFrame:
     doy = ind.index.day_of_year.to_numpy()
     out = pd.DataFrame({c: (ind[c].to_numpy() - mu[doy]) / sd[doy] for c, (mu, sd) in clim.items()}, index=ind.index)
     out["rain_on_snow"] = ind["rain_on_snow"]
+    out["snow_m"] = ind["snow_m"]
     return out
 
 
 def flag(z: pd.DataFrame, rule: dict = RULE) -> pd.Series:
     return ((z["rain_3d"] >= rule["rain_3d"]) & (z["wetness"] >= rule["wetness"])
-            & ((z["rain_on_snow"] >= rule["rain_on_snow"]) | (z["warming"] >= rule["warming"])))
+            & ((z["rain_on_snow"] >= rule["rain_on_snow"])
+               | ((z["warming"] >= rule["warming"]) & (z["snow_m"] >= SNOW_MIN_DEPTH))))  # no melt without snow
 
 
 LEVELS = {1: "watch (rain ≥ 2σ)", 2: "warning (rain ≥ 4σ)", 3: "alert (rain ≥ 5σ)"}

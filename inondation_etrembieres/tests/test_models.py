@@ -65,5 +65,7 @@ def test_peak_factor_grows_with_rise():
 def test_condition_levels():
     from inondation_etrembieres import conditions as C
     z = pd.DataFrame({"rain_3d": [1.0, 3.0, 4.5, 6.0, 6.0], "wetness": [1, 1, 1, 1, 0.0],
-                      "snow": 0.0, "warming": 0.0, "rain_on_snow": [1, 1, 1, 1, 1.0]})
+                      "snow": 0.0, "snow_m": 0.5, "warming": 0.0, "rain_on_snow": [1, 1, 1, 1, 1.0]})
     assert C.level(z).tolist() == [0, 1, 2, 3, 0]  # last: dry catchment → no flood conditions
+    z2 = z.assign(rain_on_snow=0.0, warming=2.0, snow_m=0.0)
+    assert C.level(z2).max() == 0  # warming without snow → no melt → no flag
