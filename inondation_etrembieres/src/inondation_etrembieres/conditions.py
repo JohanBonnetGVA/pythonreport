@@ -75,6 +75,7 @@ def flag(z: pd.DataFrame, rule: dict = RULE) -> pd.Series:
                | ((z["warming"] >= rule["warming"]) & (z["snow_m"] >= SNOW_MIN_DEPTH))))  # no melt without snow
 
 
+WINDOWS = ((1, 3), (4, 7), (8, 16))  # lead-day windows for the outlook
 LEVELS = {1: "watch (rain ≥ 2σ)", 2: "warning (rain ≥ 4σ)", 3: "alert (rain ≥ 5σ)"}
 
 
@@ -98,7 +99,10 @@ def forecast(data, fc: pd.DataFrame, init: pd.Timestamp, clim: dict, lead_days: 
         w.loc[:, state.columns] = state.ffill()
         z = zscores(indicators(w).iloc[-120:], clim).loc[init: init + pd.Timedelta(days=lead_days - 1)]
         lv = level(z)
-        rows.append({"member": m, "level": int(lv.max()), "day_of_max": lv.idxmax().date(),
+        lead = (z.index - init).days + 1
+        win = {f"level_d{a}_{b}": int(lv[(lead >= a) & (lead <= b)].max()) if ((lead >= a) & (lead <= b)).any() else 0
+               for a, b in WINDOWS}
+        rows.append({"member": m, "level": int(lv.max()), "day_of_max": lv.idxmax().date(), **win,
                      **{f"max_{c}": z[c].max() for c in z.columns}})
     return pd.DataFrame(rows)
 

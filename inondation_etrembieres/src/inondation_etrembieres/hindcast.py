@@ -100,6 +100,7 @@ def run_conditions() -> pd.DataFrame:
             rows.append({"event": ev, "init": init, "days_before_peak": (pd.Timestamp(peak) - pd.Timestamp(init)).days,
                          "members": len(r),
                          **{f"P_{C.LEVELS[k].split()[0]}": (r["level"] >= k).mean() for k in C.LEVELS},
+                         **{f"P_watch_d{a}_{b}": (r[f"level_d{a}_{b}"] >= 1).mean() for a, b in C.WINDOWS},
                          **{f"median_max_{c}": r[f"max_{c}"].median() for c in ("rain_3d", "wetness", "snow", "warming", "rain_on_snow")}})
     out = pd.DataFrame(rows)
     out.to_csv(config.DATA_PROCESSED / "hindcast_conditions.csv", index=False)

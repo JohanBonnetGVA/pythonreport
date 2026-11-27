@@ -13,6 +13,10 @@ FORECAST (probabilistic): current state + GEFS days 1–7, per ensemble member:
   yellow  P_watch ≥ 50 % or P_warning ≥ 20 %
   orange  P_warning ≥ 50 % or P_gr4j ≥ 50 %
   red     P_alert ≥ 50 % or (P_warning ≥ 70 % and P_gr4j ≥ 50 %)
+
+OUTLOOK (16 days, used to LIFT a watch, not to raise alerts):
+  very unlikely  P(any watch, days 1–16) ≤ 10 % and P_gr4j ≤ 5 %  → a hard yellow becomes green
+  (orange/red are never lifted by a forecast: they are confirmed by observed flow)
 """
 import pandas as pd
 
@@ -46,6 +50,18 @@ def forecast_level(p_watch: float, p_warning: float, p_alert: float, p_gr4j: flo
     return 0
 
 
+OUTLOOK = {"p_watch": 0.10, "p_gr4j": 0.05}
+
+
+def outlook(p_watch_any: float, p_gr4j: float) -> str:
+    return "very unlikely" if p_watch_any <= OUTLOOK["p_watch"] and p_gr4j <= OUTLOOK["p_gr4j"] else "possible"
+
+
+def final(hard_level: int, outlook_: str) -> int:
+    """Combined status: a forecast can only lift a watch (yellow), never an observed orange/red."""
+    return 0 if hard_level == 1 and outlook_ == "very unlikely" else hard_level
+
+
 def forecast(conditions: pd.DataFrame, gr4j: pd.DataFrame) -> pd.DataFrame:
     """Join the conditions hindcast (P per level) and the GR4J hindcast (prob_flood) per init."""
     g = gr4j[["event", "init", "prob_flood"]].assign(init=lambda x: pd.to_datetime(x["init"]).dt.date)
@@ -53,4 +69,6 @@ def forecast(conditions: pd.DataFrame, gr4j: pd.DataFrame) -> pd.DataFrame:
     m = c.merge(g, on=["event", "init"])
     m["forecast"] = [forecast_level(*r) for r in m[["P_watch", "P_warning", "P_alert", "prob_flood"]].to_numpy()]
     m["color"] = m["forecast"].map(COLORS)
-    return m[["event", "init", "days_before_peak", "P_watch", "P_warning", "P_alert", "prob_flood", "forecast", "color"]]
+    m["outlook"] = [outlook(p, g) for p, g in m[["P_watch", "prob_flood"]].to_numpy()]
+    wins = [c for c in m.columns if c.startswith("P_watch_d")]
+    return m[["event", "init", "days_before_peak", *wins, "P_warning", "P_alert", "prob_flood", "forecast", "color", "outlook"]]

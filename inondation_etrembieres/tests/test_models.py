@@ -77,3 +77,11 @@ def test_forecast_alert_levels():
     assert forecast_level(0.6, 0.1, 0.0, 0.1) == 1
     assert forecast_level(1.0, 0.6, 0.2, 0.2) == 2
     assert forecast_level(1.0, 0.8, 0.3, 0.6) == 3
+
+
+def test_outlook_lifts_only_watch():
+    from inondation_etrembieres.alerts import final, outlook
+    assert outlook(0.05, 0.0) == "very unlikely" and outlook(0.2, 0.0) == "possible"
+    assert final(1, "very unlikely") == 0          # watch lifted
+    assert final(2, "very unlikely") == 2          # observed orange kept
+    assert final(1, "possible") == 1
